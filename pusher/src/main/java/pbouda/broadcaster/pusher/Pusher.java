@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
+import java.time.Duration;
 import java.util.concurrent.TimeoutException;
 
 public class Pusher {
@@ -17,6 +18,10 @@ public class Pusher {
     private static final Logger LOG = LoggerFactory.getLogger(Pusher.class);
 
     public static void main(String[] args) throws IOException, TimeoutException, InterruptedException {
+        Duration interval = args.length > 0
+                ? Duration.ofMillis(Long.parseLong(args[0]))
+                : Duration.ofMillis(20);
+
         Config config = ConfigFactory.load("application.conf");
         Config rabbitConfig = config.getConfig("rabbitmq");
 
@@ -44,7 +49,7 @@ public class Pusher {
 
         for (int i = 0; true; i++) {
             channel.basicPublish(rabbitConfig.getString("exchange"), "", null, message.getBytes());
-            Thread.sleep(20);
+            Thread.sleep(interval.toMillis());
         }
     }
 

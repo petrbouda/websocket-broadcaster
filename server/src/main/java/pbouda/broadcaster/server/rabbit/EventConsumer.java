@@ -5,8 +5,11 @@ import com.rabbitmq.client.Consumer;
 import com.rabbitmq.client.Envelope;
 import com.rabbitmq.client.ShutdownSignalException;
 import io.micrometer.core.instrument.Counter;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import io.netty.util.CharsetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pbouda.broadcaster.server.prometheus.PrometheusRegistry;
@@ -30,11 +33,10 @@ public class EventConsumer implements Consumer {
         // It's pointless to use direct buffers POOLED because the byte array has been already created and just need to
         // wrap it around String. Netty internally wraps byte array and does not create a new one.
         //
-        // ByteBuf buffer = PooledByteBufAllocator.DEFAULT.buffer();
-        // buffer.writeCharSequence(new String(body), CharsetUtil.UTF_8);
-        // channelGroup.write(new TextWebSocketFrame(buffer))
-
-        channelGroup.write(new TextWebSocketFrame(new String(body)))
+         ByteBuf buffer = PooledByteBufAllocator.DEFAULT.buffer();
+         buffer.writeCharSequence(new String(body), CharsetUtil.UTF_8);
+         channelGroup.write(new TextWebSocketFrame(buffer))
+//        channelGroup.write(new TextWebSocketFrame(new String(body)))
                 .addListener(future -> {
                     if (future.isSuccess()) {
                         ROUTED_MESSAGES.increment();

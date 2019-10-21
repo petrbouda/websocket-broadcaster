@@ -11,6 +11,7 @@
 
     <modules>
         <module>client</module>
+        <module>multi-client</module>
         <module>server</module>
         <module>pusher</module>
     </modules>
