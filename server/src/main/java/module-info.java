@@ -1,6 +1,5 @@
 module broadcaster.server {
     requires slf4j.api;
-    requires com.rabbitmq.client;
 
     requires simpleclient;
     requires simpleclient.common;
@@ -14,4 +13,6 @@ module broadcaster.server {
     requires java.sql;
     requires java.management;
     requires jdk.unsupported;
+    requires kafka.streams;
+    requires kafka.clients;
 }

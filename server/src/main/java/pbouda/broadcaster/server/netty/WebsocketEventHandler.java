@@ -1,6 +1,7 @@
 package pbouda.broadcaster.server.netty;
 
 import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.channel.group.ChannelGroup;
@@ -10,12 +11,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pbouda.broadcaster.server.prometheus.PrometheusRegistry;
 
+import java.util.concurrent.atomic.LongAdder;
+
 public class WebsocketEventHandler extends SimpleChannelInboundHandler<TextWebSocketFrame> {
 
     private static final Logger LOG = LoggerFactory.getLogger(WebsocketEventHandler.class);
 
-    private static final Counter CONNECTED_USERS_TOTAL =
-            Counter.builder("broadcaster_connected_users_total")
+    private static final LongAdder CONNECTED_USERS = new LongAdder();
+
+    private static final Gauge CONNECTED_USERS_TOTAL =
+            Gauge.builder("broadcaster_connected_users_total", CONNECTED_USERS::longValue)
                     .description("Total number of all connected users")
                     .register(PrometheusRegistry.instance());
 
@@ -43,7 +48,7 @@ public class WebsocketEventHandler extends SimpleChannelInboundHandler<TextWebSo
             context.pipeline().remove(HttpRequestHandler.class);
             channelGroup.add(context.channel());
             LOG.info("WS Client added: " + context.channel().remoteAddress());
-            CONNECTED_USERS_TOTAL.increment();
+            CONNECTED_USERS.increment();
 //        } else if (event instanceof IdleStateEvent) {
 //            /*
 //             * Automatic PING - PONG mechanism in WebSocket?
@@ -84,11 +89,13 @@ public class WebsocketEventHandler extends SimpleChannelInboundHandler<TextWebSo
         LOG.error("An exception occurred, closing client " + context.channel().remoteAddress(), cause);
         context.close();
         DISCONNECTED_USERS_TOTAL_BY_EXCEPTION.increment();
+        CONNECTED_USERS.decrement();
     }
 
     @Override
     public void channelInactive(ChannelHandlerContext context) {
         LOG.info("Closing WS Client: " + context.channel().remoteAddress());
         DISCONNECTED_USERS_TOTAL_BY_CLOSE_FRAME.increment();
+        CONNECTED_USERS.decrement();
     }
 }

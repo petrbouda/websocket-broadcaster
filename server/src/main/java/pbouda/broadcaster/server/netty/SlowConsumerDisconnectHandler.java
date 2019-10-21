@@ -16,8 +16,6 @@ public class SlowConsumerDisconnectHandler extends ChannelOutboundHandlerAdapter
 
     @Override
     public void write(ChannelHandlerContext context, Object obj, ChannelPromise promise) {
-        // ping and pong frames already handled
-
         if (obj instanceof TextWebSocketFrame) {
             if (context.channel().isWritable()) {
                 context.writeAndFlush(obj);

@@ -7,14 +7,14 @@ import java.net.URI;
 
 public class MultiClient {
 
-    private static int CLIENTS_COUNT = 5000;
-
     public static void main(String[] args) throws Exception {
+        int clients = args.length > 0 ? Integer.parseInt(args[0]) : 5000;
+
         URI uri = new URI("ws://127.0.0.1:8080/ws");
 
         EventLoopGroup group = new EpollEventLoopGroup();
         try {
-            for (int i = 0; i < CLIENTS_COUNT; i++) {
+            for (int i = 0; i < clients; i++) {
                 SingleClient client = new SingleClient(uri, group, i);
                 client.connect();
             }

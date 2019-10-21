@@ -11,7 +11,7 @@ import pbouda.broadcaster.server.prometheus.PrometheusRegistry;
 public class PrometheusRoute extends AbstractRoute {
 
     public PrometheusRoute() {
-        this("/actuator/prometheus");
+        this("/prometheus");
     }
 
     public PrometheusRoute(String uri) {

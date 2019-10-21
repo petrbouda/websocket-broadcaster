@@ -5,10 +5,9 @@ import com.typesafe.config.ConfigFactory;
 import io.netty.channel.Channel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pbouda.broadcaster.server.prometheus.PrometheusConfigurer;
-import pbouda.broadcaster.server.rabbit.EventConsumer;
-import pbouda.broadcaster.server.rabbit.Rabbit;
+import pbouda.broadcaster.server.kafka.KafkaFactory;
 import pbouda.broadcaster.server.netty.Broadcaster;
+import pbouda.broadcaster.server.prometheus.PrometheusConfigurer;
 
 public class Server {
 
@@ -18,16 +17,16 @@ public class Server {
         Config config = ConfigFactory.load("application.conf");
 
         var broadcaster = new Broadcaster(config.getConfig("broadcaster"));
-        var rabbit = new Rabbit(config.getConfig("rabbitmq"));
-        var consumer = new EventConsumer(broadcaster.getChannelGroup());
+        var kafkaFactory = new KafkaFactory(config.getConfig("kafka"));
+        var kafkaStreams = kafkaFactory.provide(broadcaster.getChannelGroup());
 
         PrometheusConfigurer.configure(broadcaster.getChannelGroup());
 
-        // Start consuming from Rabbit when WebSocket is UP and RUNNING
-        Channel serverChannel = broadcaster.start(f -> rabbit.start(consumer));
+        // Start consuming from Kafka when WebSocket is UP and RUNNING
+        Channel serverChannel = broadcaster.start(f -> kafkaStreams.start());
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            rabbit.close();
+            kafkaStreams.close();
             broadcaster.close();
         }));
 

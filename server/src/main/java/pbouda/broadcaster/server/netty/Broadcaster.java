@@ -16,7 +16,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.management.ManagementFactory;
-import java.lang.management.RuntimeMXBean;
 
 public class Broadcaster implements AutoCloseable {
 
@@ -42,8 +41,6 @@ public class Broadcaster implements AutoCloseable {
                 // .childOption(ChannelOption.SO_SNDBUF, 1024 * 1024)
                 // .childOption(ChannelOption.SO_RCVBUF, 32 * 1024)
                 .childHandler(new RouterChannelInitializer(config.getString("path"), channelGroup));
-        // Let's fill up SO_SNDBUF to simulate a slow consumer
-        // .childOption(ChannelOption.SO_SNDBUF, 4092);
 
         /*
          * The maximum queue length for incoming connection indications
@@ -54,13 +51,8 @@ public class Broadcaster implements AutoCloseable {
         // bootstrap.option(ChannelOption.SO_BACKLOG, 100);
         // bootstrap.handler(new LoggingHandler(LogLevel.INFO));
 
-        // var certificate = new SelfSignedCertificate();
-        // var sslContext = SslContextBuilder.forServer(certificate.certificate(), certificate.privateKey())
-        //         .build();
 
         // Receive and Send Buffer - always be able to fill in an entire entity.
-        // bootstrap.childOption(ChannelOption.SO_SNDBUF, 32 * 1024);
-        // bootstrap.childOption(ChannelOption.SO_RCVBUF, 32 * 1024);
         // bootstrap.childOption(ChannelOption.WRITE_BUFFER_WATER_MARK, WriteBufferWaterMark.DEFAULT);
     }
 
