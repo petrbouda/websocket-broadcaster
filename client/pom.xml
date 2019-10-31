@@ -10,21 +10,16 @@
         <version>1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>pusher</artifactId>
+    <artifactId>client</artifactId>
 
     <properties>
-        <main-class>pbouda.pusher.Pusher</main-class>
+        <main-class>pbouda.client.MultiClient</main-class>
     </properties>
 
     <dependencies>
         <dependency>
-            <groupId>com.typesafe</groupId>
-            <artifactId>config</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka-clients</artifactId>
+            <groupId>io.netty</groupId>
+            <artifactId>netty-all</artifactId>
         </dependency>
 
         <dependency>
@@ -34,7 +29,7 @@
     </dependencies>
 
     <build>
-        <finalName>pusher</finalName>
+        <finalName>client</finalName>
 
         <plugins>
             <plugin>
