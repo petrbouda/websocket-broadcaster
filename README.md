@@ -35,6 +35,7 @@ java -XX:+UnlockDiagnosticVMOptions -XX:+DebugNonSafepoints --module-path broadc
 - Clients just log the incoming messages to see that something flows through the network
 
 ```
+# Default, only one client
 java --module-path client/target/dependency:client/target/classes --module broadcaster.client/pbouda.client.MultiClient
 
 # For more clients (5000)
