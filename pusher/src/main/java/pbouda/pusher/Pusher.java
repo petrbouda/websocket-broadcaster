@@ -26,13 +26,13 @@ public class Pusher {
     public static void main(String[] args) {
         Config config = ConfigFactory.load("application.conf")
                 .getConfig("kafka");
+        String topic = config.getString("topic");
 
         Properties props = new Properties();
         props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getString("bootstrap-servers"));
         props.put(ProducerConfig.CLIENT_ID_CONFIG, UUID.randomUUID().toString());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
-        //props.put(ProducerConfig.PARTITIONER_CLASS_CONFIG, CustomPartitioner.class.getName());
         KafkaProducer<Object, String> producer = new KafkaProducer<>(props);
 
         Duration interval = args.length > 0
@@ -46,7 +46,7 @@ public class Pusher {
         while (true) {
             try {
                 String paragraphs = LOREM.getParagraphs(1, 5);
-                producer.send(new ProducerRecord<>(config.getString("topic"), paragraphs)).get();
+                producer.send(new ProducerRecord<>(topic, paragraphs)).get();
                 Thread.sleep(interval.toMillis());
             } catch (ExecutionException | InterruptedException e) {
                 System.out.println("Error in sending record");
