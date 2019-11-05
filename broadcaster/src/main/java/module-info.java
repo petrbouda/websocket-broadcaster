@@ -12,7 +12,8 @@ module broadcaster.server {
 
     requires java.sql;
     requires java.management;
-    requires jdk.unsupported;
     requires kafka.streams;
     requires kafka.clients;
+
+    requires jdk.unsupported;
 }

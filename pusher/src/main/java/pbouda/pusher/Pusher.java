@@ -1,6 +1,7 @@
 package pbouda.pusher;
 
-
+import com.thedeanda.lorem.Lorem;
+import com.thedeanda.lorem.LoremIpsum;
 import com.typesafe.config.Config;
 import com.typesafe.config.ConfigFactory;
 import org.apache.kafka.clients.producer.KafkaProducer;
@@ -20,6 +21,8 @@ public class Pusher {
 
     private static final Logger LOG = LoggerFactory.getLogger(Pusher.class);
 
+    private static final Lorem LOREM = LoremIpsum.getInstance();
+
     public static void main(String[] args) {
         Config config = ConfigFactory.load("application.conf")
                 .getConfig("kafka");
@@ -36,18 +39,14 @@ public class Pusher {
                 ? Duration.ofMillis(Long.parseLong(args[0]))
                 : Duration.ofMillis(20);
 
-        String message = "„Lidé mají rádi tajemství. My jsme za pomoci vědy přidali další kapitolu do příběhu " +
-                "o lochneské záhadě,” řekl vedoucí týmu genetik Neil Gemmell. Postup vědců byl ve své podstatě " +
-                "velmi prostý. Každý živočich za sebou ve vodě nechává stopu DNA. Ať už pochází ze šupiny, srsti, " +
-                "peří či moči, moderní metody dokážou odhalit původ biologického materiálu.";
-
         LOG.info("PID {} - Pusher started", ManagementFactory.getRuntimeMXBean().getPid());
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> System.out.println("Pusher Killed!")));
 
         while (true) {
             try {
-                producer.send(new ProducerRecord<>(config.getString("topic"), message)).get();
+                String paragraphs = LOREM.getParagraphs(1, 5);
+                producer.send(new ProducerRecord<>(config.getString("topic"), paragraphs)).get();
                 Thread.sleep(interval.toMillis());
             } catch (ExecutionException | InterruptedException e) {
                 System.out.println("Error in sending record");

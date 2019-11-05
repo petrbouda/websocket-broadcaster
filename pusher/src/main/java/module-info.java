@@ -4,4 +4,5 @@ module broadcaster.pusher {
     requires slf4j.api;
     requires java.sql;
     requires kafka.clients;
+    requires lorem;
 }

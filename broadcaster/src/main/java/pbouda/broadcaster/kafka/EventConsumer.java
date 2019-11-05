@@ -1,8 +1,11 @@
 package pbouda.broadcaster.kafka;
 
 import io.micrometer.core.instrument.Counter;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.channel.group.ChannelGroup;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
+import io.netty.util.CharsetUtil;
 import org.apache.kafka.streams.kstream.ForeachAction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,9 +30,10 @@ public class EventConsumer implements ForeachAction<Object, Object> {
     public void apply(Object key, Object value) {
         // It's pointless to use direct buffers POOLED because the byte array has been already created and just need to
         // wrap it around String. Netty internally wraps byte array and does not create a new one.
-        // ByteBuf buffer = PooledByteBufAllocator.DEFAULT.buffer();
-        // buffer.writeCharSequence((String) value, CharsetUtil.UTF_8);
-        channelGroup.write(new TextWebSocketFrame((String) value))
+         ByteBuf buffer = PooledByteBufAllocator.DEFAULT.buffer();
+         buffer.writeCharSequence((String) value, CharsetUtil.UTF_8);
+//        channelGroup.write(new TextWebSocketFrame((String) value))
+        channelGroup.write(buffer)
                 .addListener(future -> {
                     if (future.isSuccess()) {
                         ROUTED_MESSAGES.increment();

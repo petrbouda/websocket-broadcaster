@@ -8,21 +8,19 @@ import java.net.URI;
 public class MultiClient {
 
     public static void main(String[] args) throws Exception {
-        int clients = args.length > 0 ? Integer.parseInt(args[0]) : 5000;
+        int clients = args.length > 0 ? Integer.parseInt(args[0]) : 1;
 
         URI uri = new URI("ws://127.0.0.1:8080/ws");
 
         EventLoopGroup group = new EpollEventLoopGroup();
-        try {
-            for (int i = 0; i < clients; i++) {
-                SingleClient client = new SingleClient(uri, group, i);
-                client.connect();
-            }
+        Runtime.getRuntime().addShutdownHook(new Thread(group::shutdownGracefully));
 
-            // Stop and don't kill the client.
-            Thread.currentThread().join();
-        } finally {
-            group.shutdownGracefully();
+        for (int i = 0; i < clients; i++) {
+            SingleClient client = new SingleClient(uri, group, i);
+            client.connect();
         }
+
+        // Stop and don't kill the clients.
+        Thread.currentThread().join();
     }
 }
