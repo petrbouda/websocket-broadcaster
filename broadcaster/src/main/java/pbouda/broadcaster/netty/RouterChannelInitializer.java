@@ -27,7 +27,12 @@ public class RouterChannelInitializer extends ChannelInitializer<SocketChannel> 
     protected void initChannel(SocketChannel channel) {
         ChannelPipeline pipeline = channel.pipeline();
         pipeline.addLast(new HttpServerCodec());
-        pipeline.addLast(new ChunkedWriteHandler());
+
+        // For Streaming of Continuation frames
+        // https://tools.ietf.org/html/rfc6455#section-5.4
+        // A single WebSocket frame, per RFC-6455 base framing, has a maximum size limit of 2^63 bytes
+        // (9,223,372,036,854,775,807 bytes ~= 9.22 exabytes)
+        // pipeline.addLast(new ChunkedWriteHandler());
         pipeline.addLast(new HttpObjectAggregator(64 * 1024));
 
         // pipeline.addLast(new IdleStateHandler(60, 30, 0));

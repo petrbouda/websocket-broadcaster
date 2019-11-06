@@ -19,11 +19,6 @@ public class WebsocketEventHandler extends SimpleChannelInboundHandler<TextWebSo
 
     private static final LongAdder CONNECTED_USERS = new LongAdder();
 
-    private static final Gauge CONNECTED_USERS_TOTAL =
-            Gauge.builder("broadcaster_connected_users_total", CONNECTED_USERS::longValue)
-                    .description("Total number of all connected users")
-                    .register(PrometheusRegistry.instance());
-
     private static final Counter DISCONNECTED_USERS_TOTAL_BY_CLOSE_FRAME =
             Counter.builder("broadcaster_disconnected_users_total")
                     .tag("reason", "close_frame")

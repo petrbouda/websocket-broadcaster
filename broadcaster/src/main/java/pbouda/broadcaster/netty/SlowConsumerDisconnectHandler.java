@@ -4,6 +4,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPromise;
 import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.websocketx.BinaryWebSocketFrame;
 import io.netty.handler.codec.http.websocketx.TextWebSocketFrame;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,7 +17,7 @@ public class SlowConsumerDisconnectHandler extends ChannelOutboundHandlerAdapter
 
     @Override
     public void write(ChannelHandlerContext context, Object obj, ChannelPromise promise) {
-        if (obj instanceof TextWebSocketFrame) {
+        if ((obj instanceof TextWebSocketFrame) || (obj instanceof BinaryWebSocketFrame)) {
             if (context.channel().isWritable()) {
                 context.writeAndFlush(obj);
                 promise.setSuccess();

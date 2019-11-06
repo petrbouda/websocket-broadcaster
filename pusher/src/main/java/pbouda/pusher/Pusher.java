@@ -24,8 +24,7 @@ public class Pusher {
     private static final Lorem LOREM = LoremIpsum.getInstance();
 
     public static void main(String[] args) {
-        Config config = ConfigFactory.load("application.conf")
-                .getConfig("kafka");
+        Config config = ConfigFactory.load("application.conf").getConfig("kafka");
         String topic = config.getString("topic");
 
         Properties props = new Properties();
