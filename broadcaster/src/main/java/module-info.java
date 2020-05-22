@@ -16,4 +16,6 @@ module broadcaster.server {
     requires kafka.clients;
 
     requires jdk.unsupported;
+    requires lorem;
+    requires jdk.jfr;
 }

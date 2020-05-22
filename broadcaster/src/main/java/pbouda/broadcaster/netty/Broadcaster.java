@@ -4,6 +4,7 @@ import com.typesafe.config.Config;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.EventLoopGroup;
 import io.netty.channel.epoll.EpollEventLoopGroup;
 import io.netty.channel.epoll.EpollServerSocketChannel;
@@ -14,6 +15,7 @@ import io.netty.util.concurrent.GenericFutureListener;
 import io.netty.util.concurrent.ImmediateEventExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import pbouda.broadcaster.NamedThreadFactory;
 
 import java.lang.management.ManagementFactory;
 
@@ -30,16 +32,17 @@ public class Broadcaster implements AutoCloseable {
     public Broadcaster(Config config) {
         this.config = config;
         this.channelGroup = new DefaultChannelGroup(ImmediateEventExecutor.INSTANCE);
-        this.bossEventLoopGroup = new EpollEventLoopGroup(1);
-        this.workerEventLoopGroup = new EpollEventLoopGroup();
+        this.bossEventLoopGroup = new EpollEventLoopGroup(1, new NamedThreadFactory("server-accept"));
+        this.workerEventLoopGroup = new EpollEventLoopGroup(0, new NamedThreadFactory("server-io"));
 
         this.bootstrap = new ServerBootstrap()
                 .channel(EpollServerSocketChannel.class)
-                .group(bossEventLoopGroup, workerEventLoopGroup)
+                .group(workerEventLoopGroup)
                 .localAddress(config.getInt("port"))
                 // .handler(new LoggingHandler(LogLevel.INFO))
-                // .childOption(ChannelOption.SO_SNDBUF, 1024 * 1024)
-                // .childOption(ChannelOption.SO_RCVBUF, 32 * 1024)
+                .childOption(ChannelOption.SO_SNDBUF, 1024 * 1024)
+                .childOption(ChannelOption.SO_RCVBUF, 32 * 1024)
+                .childOption(ChannelOption.SO_BACKLOG, 256)
                 .childHandler(new RouterChannelInitializer(config.getString("path"), channelGroup));
 
         /*

@@ -36,7 +36,7 @@ public class Pusher {
 
         Duration interval = args.length > 0
                 ? Duration.ofMillis(Long.parseLong(args[0]))
-                : Duration.ofMillis(20);
+                : Duration.ofMillis(250);
 
         LOG.info("PID {} - Pusher started", ManagementFactory.getRuntimeMXBean().getPid());
 

@@ -1,0 +1,1613 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="294" onload="init(evt)" viewBox="0 0 1200 294" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+	}
+
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+		}
+		else if (e.target.id == "unzoom") unzoom();
+		else if (e.target.id == "search") search_prompt();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	}, false)
+
+	// functions
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+		return;
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+	}
+
+	// search
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)", "");
+			if (term != null) {
+				search(term)
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		var re = new RegExp(term);
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0" y="0" width="100%" height="100%" fill="rgb(240,240,220)"/>
+<text id="title" x="600" y="24">Flame Graph</text>
+<text id="details" x="10" y="277"> </text>
+<text id="unzoom" x="10" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090" y="24">Search</text>
+<text id="matched" x="1090" y="277"> </text>
+<g id="frames">
+<g>
+<title>all (20,327 samples, 100.00%)</title><rect x="10.0" y="243.0" width="1180.0" height="15" fill="#fa7b7b" rx="2" ry="2"/>
+<text x="13.0" y="254.0">all</text>
+</g>
+<g>
+<title>[AMQP Connection 127.0.0.1:5672 tid=17364] (415 samples, 2.04%)</title><rect x="10.0" y="227.0" width="24.1" height="15" fill="#ec6969" rx="2" ry="2"/>
+<text x="13.0" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="10.1" y="211.0" width="24.0" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="13.1" y="222.0">j..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQConnection$MainLoop.run (414 samples, 2.04%)</title><rect x="10.1" y="195.0" width="24.0" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="13.1" y="206.0">c..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/SocketFrameHandler.readFrame (412 samples, 2.03%)</title><rect x="10.2" y="179.0" width="23.9" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="13.2" y="190.0">c..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/Frame.readFrom (412 samples, 2.03%)</title><rect x="10.2" y="163.0" width="23.9" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="13.2" y="174.0">c..</text>
+</g>
+<g>
+<title>java/io/DataInputStream.readUnsignedByte (412 samples, 2.03%)</title><rect x="10.2" y="147.0" width="23.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="13.2" y="158.0">j..</text>
+</g>
+<g>
+<title>java/io/BufferedInputStream.read (412 samples, 2.03%)</title><rect x="10.2" y="131.0" width="23.9" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="13.2" y="142.0">j..</text>
+</g>
+<g>
+<title>java/io/BufferedInputStream.fill (412 samples, 2.03%)</title><rect x="10.2" y="115.0" width="23.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="13.2" y="126.0">j..</text>
+</g>
+<g>
+<title>java/net/SocketInputStream.read (412 samples, 2.03%)</title><rect x="10.2" y="99.0" width="23.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="13.2" y="110.0">j..</text>
+</g>
+<g>
+<title>java/net/SocketInputStream.read (412 samples, 2.03%)</title><rect x="10.2" y="83.0" width="23.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="13.2" y="94.0">j..</text>
+</g>
+<g>
+<title>java/net/SocketInputStream.socketRead (412 samples, 2.03%)</title><rect x="10.2" y="67.0" width="23.9" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="13.2" y="78.0">j..</text>
+</g>
+<g>
+<title>java/net/SocketInputStream.socketRead0 (412 samples, 2.03%)</title><rect x="10.2" y="51.0" width="23.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="13.2" y="62.0">j..</text>
+</g>
+<g>
+<title>__poll (410 samples, 2.02%)</title><rect x="10.2" y="35.0" width="23.8" height="15" fill="#f06e6e" rx="2" ry="2"/>
+<text x="13.2" y="46.0">_..</text>
+</g>
+<g>
+<title>[AsyncAppender-Worker-ASYNC tid=17356] (415 samples, 2.04%)</title><rect x="34.1" y="227.0" width="24.1" height="15" fill="#fd8080" rx="2" ry="2"/>
+<text x="37.1" y="238.0">[..</text>
+</g>
+<g>
+<title>ch/qos/logback/core/AsyncAppenderBase$Worker.run (415 samples, 2.04%)</title><rect x="34.1" y="211.0" width="24.1" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="37.1" y="222.0">c..</text>
+</g>
+<g>
+<title>java/util/concurrent/ArrayBlockingQueue.take (415 samples, 2.04%)</title><rect x="34.1" y="195.0" width="24.1" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="37.1" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (415 samples, 2.04%)</title><rect x="34.1" y="179.0" width="24.1" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="37.1" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (415 samples, 2.04%)</title><rect x="34.1" y="163.0" width="24.1" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="37.1" y="174.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (415 samples, 2.04%)</title><rect x="34.1" y="147.0" width="24.1" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="37.1" y="158.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="34.1" y="131.0" width="24.1" height="15" fill="#e15a5a" rx="2" ry="2"/>
+<text x="37.1" y="142.0">_..</text>
+</g>
+<g>
+<title>[Attach Listener tid=17497] (414 samples, 2.04%)</title><rect x="58.2" y="227.0" width="24.0" height="15" fill="#e86363" rx="2" ry="2"/>
+<text x="61.2" y="238.0">[..</text>
+</g>
+<g>
+<title>[unknown] (414 samples, 2.04%)</title><rect x="58.2" y="211.0" width="24.0" height="15" fill="#e55f5f" rx="2" ry="2"/>
+<text x="61.2" y="222.0">[..</text>
+</g>
+<g>
+<title>__libc_accept (414 samples, 2.04%)</title><rect x="58.2" y="195.0" width="24.0" height="15" fill="#f97a7a" rx="2" ry="2"/>
+<text x="61.2" y="206.0">_..</text>
+</g>
+<g>
+<title>[Common-Cleaner tid=17351] (415 samples, 2.04%)</title><rect x="82.2" y="227.0" width="24.1" height="15" fill="#e56060" rx="2" ry="2"/>
+<text x="85.2" y="238.0">[..</text>
+</g>
+<g>
+<title>jdk/internal/misc/InnocuousThread.run (415 samples, 2.04%)</title><rect x="82.2" y="211.0" width="24.1" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="85.2" y="222.0">j..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (415 samples, 2.04%)</title><rect x="82.2" y="195.0" width="24.1" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="85.2" y="206.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/ref/CleanerImpl.run (415 samples, 2.04%)</title><rect x="82.2" y="179.0" width="24.1" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="85.2" y="190.0">j..</text>
+</g>
+<g>
+<title>java/lang/ref/ReferenceQueue.remove (415 samples, 2.04%)</title><rect x="82.2" y="163.0" width="24.1" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="85.2" y="174.0">j..</text>
+</g>
+<g>
+<title>java/lang/Object.wait (415 samples, 2.04%)</title><rect x="82.2" y="147.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="85.2" y="158.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (415 samples, 2.04%)</title><rect x="82.2" y="131.0" width="24.1" height="15" fill="#f06e6e" rx="2" ry="2"/>
+<text x="85.2" y="142.0">_..</text>
+</g>
+<g>
+<title>[Finalizer tid=17346] (415 samples, 2.04%)</title><rect x="106.3" y="227.0" width="24.1" height="15" fill="#fa7b7b" rx="2" ry="2"/>
+<text x="109.3" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/ref/Finalizer$FinalizerThread.run (415 samples, 2.04%)</title><rect x="106.3" y="211.0" width="24.1" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="109.3" y="222.0">j..</text>
+</g>
+<g>
+<title>java/lang/ref/ReferenceQueue.remove (415 samples, 2.04%)</title><rect x="106.3" y="195.0" width="24.1" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="109.3" y="206.0">j..</text>
+</g>
+<g>
+<title>java/lang/ref/ReferenceQueue.remove (415 samples, 2.04%)</title><rect x="106.3" y="179.0" width="24.1" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="109.3" y="190.0">j..</text>
+</g>
+<g>
+<title>java/lang/Object.wait (415 samples, 2.04%)</title><rect x="106.3" y="163.0" width="24.1" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="109.3" y="174.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="106.3" y="147.0" width="24.1" height="15" fill="#ef6d6d" rx="2" ry="2"/>
+<text x="109.3" y="158.0">_..</text>
+</g>
+<g>
+<title>[Reference Handler tid=17345] (415 samples, 2.04%)</title><rect x="130.4" y="227.0" width="24.1" height="15" fill="#fe8080" rx="2" ry="2"/>
+<text x="133.4" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/ref/Reference$ReferenceHandler.run (415 samples, 2.04%)</title><rect x="130.4" y="211.0" width="24.1" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="133.4" y="222.0">j..</text>
+</g>
+<g>
+<title>java/lang/ref/Reference.processPendingReferences (415 samples, 2.04%)</title><rect x="130.4" y="195.0" width="24.1" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="133.4" y="206.0">j..</text>
+</g>
+<g>
+<title>java/lang/ref/Reference.waitForReferencePendingList (415 samples, 2.04%)</title><rect x="130.4" y="179.0" width="24.1" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="133.4" y="190.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="130.4" y="163.0" width="24.1" height="15" fill="#f87878" rx="2" ry="2"/>
+<text x="133.4" y="174.0">_..</text>
+</g>
+<g>
+<title>[Signal Dispatcher tid=17347] (415 samples, 2.04%)</title><rect x="154.5" y="227.0" width="24.1" height="15" fill="#ed6a6a" rx="2" ry="2"/>
+<text x="157.5" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="154.5" y="211.0" width="24.1" height="15" fill="#fb7d7d" rx="2" ry="2"/>
+<text x="157.5" y="222.0">d..</text>
+</g>
+<g>
+<title>[epollEventLoopGroup-2-1 tid=17363] (415 samples, 2.04%)</title><rect x="178.6" y="227.0" width="24.1" height="15" fill="#e96565" rx="2" ry="2"/>
+<text x="181.6" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (415 samples, 2.04%)</title><rect x="178.6" y="211.0" width="24.1" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="181.6" y="222.0">j..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/FastThreadLocalRunnable.run (415 samples, 2.04%)</title><rect x="178.6" y="195.0" width="24.1" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="181.6" y="206.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/internal/ThreadExecutorMap$2.run (415 samples, 2.04%)</title><rect x="178.6" y="179.0" width="24.1" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="181.6" y="190.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor$5.run (415 samples, 2.04%)</title><rect x="178.6" y="163.0" width="24.1" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="181.6" y="174.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.run (415 samples, 2.04%)</title><rect x="178.6" y="147.0" width="24.1" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="181.6" y="158.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.epollWait (415 samples, 2.04%)</title><rect x="178.6" y="131.0" width="24.1" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="181.6" y="142.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/Native.epollWait (415 samples, 2.04%)</title><rect x="178.6" y="115.0" width="24.1" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="181.6" y="126.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/Native.epollWait0 (415 samples, 2.04%)</title><rect x="178.6" y="99.0" width="24.1" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="181.6" y="110.0">i..</text>
+</g>
+<g>
+<title>epoll_wait (415 samples, 2.04%)</title><rect x="178.6" y="83.0" width="24.1" height="15" fill="#f47474" rx="2" ry="2"/>
+<text x="181.6" y="94.0">e..</text>
+</g>
+<g>
+<title>[epollEventLoopGroup-3-1 tid=17409] (414 samples, 2.04%)</title><rect x="202.7" y="227.0" width="24.0" height="15" fill="#fb7d7d" rx="2" ry="2"/>
+<text x="205.7" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="202.7" y="211.0" width="24.0" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="205.7" y="222.0">j..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/FastThreadLocalRunnable.run (414 samples, 2.04%)</title><rect x="202.7" y="195.0" width="24.0" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="205.7" y="206.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/internal/ThreadExecutorMap$2.run (414 samples, 2.04%)</title><rect x="202.7" y="179.0" width="24.0" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="205.7" y="190.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor$5.run (414 samples, 2.04%)</title><rect x="202.7" y="163.0" width="24.0" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="205.7" y="174.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.run (414 samples, 2.04%)</title><rect x="202.7" y="147.0" width="24.0" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="205.7" y="158.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.epollWait (413 samples, 2.03%)</title><rect x="202.7" y="131.0" width="23.9" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="205.7" y="142.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/Native.epollWait (413 samples, 2.03%)</title><rect x="202.7" y="115.0" width="23.9" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="205.7" y="126.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/Native.epollWait0 (413 samples, 2.03%)</title><rect x="202.7" y="99.0" width="23.9" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="205.7" y="110.0">i..</text>
+</g>
+<g>
+<title>epoll_wait (413 samples, 2.03%)</title><rect x="202.7" y="83.0" width="23.9" height="15" fill="#fa7c7c" rx="2" ry="2"/>
+<text x="205.7" y="94.0">e..</text>
+</g>
+<g>
+<title>[epollEventLoopGroup-3-2 tid=17413] (414 samples, 2.04%)</title><rect x="226.7" y="227.0" width="24.0" height="15" fill="#e86464" rx="2" ry="2"/>
+<text x="229.7" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="226.7" y="211.0" width="24.0" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="229.7" y="222.0">j..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/FastThreadLocalRunnable.run (414 samples, 2.04%)</title><rect x="226.7" y="195.0" width="24.0" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="229.7" y="206.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/internal/ThreadExecutorMap$2.run (414 samples, 2.04%)</title><rect x="226.7" y="179.0" width="24.0" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="229.7" y="190.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor$5.run (414 samples, 2.04%)</title><rect x="226.7" y="163.0" width="24.0" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="229.7" y="174.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.run (414 samples, 2.04%)</title><rect x="226.7" y="147.0" width="24.0" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="229.7" y="158.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.epollWait (411 samples, 2.02%)</title><rect x="226.7" y="131.0" width="23.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="229.7" y="142.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/Native.epollWait (411 samples, 2.02%)</title><rect x="226.7" y="115.0" width="23.9" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="229.7" y="126.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/Native.epollWait0 (411 samples, 2.02%)</title><rect x="226.7" y="99.0" width="23.9" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="229.7" y="110.0">i..</text>
+</g>
+<g>
+<title>epoll_wait (411 samples, 2.02%)</title><rect x="226.7" y="83.0" width="23.9" height="15" fill="#fc7f7f" rx="2" ry="2"/>
+<text x="229.7" y="94.0">e..</text>
+</g>
+<g>
+<title>[epollEventLoopGroup-3-3 tid=17443] (414 samples, 2.04%)</title><rect x="250.7" y="227.0" width="24.1" height="15" fill="#fc7f7f" rx="2" ry="2"/>
+<text x="253.7" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="250.7" y="211.0" width="24.1" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="253.7" y="222.0">j..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/FastThreadLocalRunnable.run (414 samples, 2.04%)</title><rect x="250.7" y="195.0" width="24.1" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="253.7" y="206.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/internal/ThreadExecutorMap$2.run (414 samples, 2.04%)</title><rect x="250.7" y="179.0" width="24.1" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="253.7" y="190.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor$5.run (414 samples, 2.04%)</title><rect x="250.7" y="163.0" width="24.1" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="253.7" y="174.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.run (414 samples, 2.04%)</title><rect x="250.7" y="147.0" width="24.1" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="253.7" y="158.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.epollWait (413 samples, 2.03%)</title><rect x="250.7" y="131.0" width="24.0" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="253.7" y="142.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/Native.epollWait (413 samples, 2.03%)</title><rect x="250.7" y="115.0" width="24.0" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="253.7" y="126.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/Native.epollWait0 (413 samples, 2.03%)</title><rect x="250.7" y="99.0" width="24.0" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="253.7" y="110.0">i..</text>
+</g>
+<g>
+<title>epoll_wait (413 samples, 2.03%)</title><rect x="250.7" y="83.0" width="24.0" height="15" fill="#fb7d7d" rx="2" ry="2"/>
+<text x="253.7" y="94.0">e..</text>
+</g>
+<g>
+<title>[main tid=17338] (415 samples, 2.04%)</title><rect x="274.8" y="227.0" width="24.1" height="15" fill="#f97b7b" rx="2" ry="2"/>
+<text x="277.8" y="238.0">[..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/Server.main (415 samples, 2.04%)</title><rect x="274.8" y="211.0" width="24.1" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="277.8" y="222.0">p..</text>
+</g>
+<g>
+<title>io/netty/channel/DefaultChannelPromise.syncUninterruptibly (415 samples, 2.04%)</title><rect x="274.8" y="195.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="277.8" y="206.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/DefaultChannelPromise.syncUninterruptibly (415 samples, 2.04%)</title><rect x="274.8" y="179.0" width="24.1" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="277.8" y="190.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/DefaultPromise.syncUninterruptibly (415 samples, 2.04%)</title><rect x="274.8" y="163.0" width="24.1" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="277.8" y="174.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/DefaultChannelPromise.awaitUninterruptibly (415 samples, 2.04%)</title><rect x="274.8" y="147.0" width="24.1" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="277.8" y="158.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/DefaultChannelPromise.awaitUninterruptibly (415 samples, 2.04%)</title><rect x="274.8" y="131.0" width="24.1" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="277.8" y="142.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/DefaultPromise.awaitUninterruptibly (415 samples, 2.04%)</title><rect x="274.8" y="115.0" width="24.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="277.8" y="126.0">i..</text>
+</g>
+<g>
+<title>java/lang/Object.wait (415 samples, 2.04%)</title><rect x="274.8" y="99.0" width="24.1" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="277.8" y="110.0">j..</text>
+</g>
+<g>
+<title>java/lang/Object.wait (415 samples, 2.04%)</title><rect x="274.8" y="83.0" width="24.1" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="277.8" y="94.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="274.8" y="67.0" width="24.1" height="15" fill="#ee6b6b" rx="2" ry="2"/>
+<text x="277.8" y="78.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-1 tid=17365] (415 samples, 2.04%)</title><rect x="298.9" y="227.0" width="24.1" height="15" fill="#fc7e7e" rx="2" ry="2"/>
+<text x="301.9" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (415 samples, 2.04%)</title><rect x="298.9" y="211.0" width="24.1" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="301.9" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (415 samples, 2.04%)</title><rect x="298.9" y="195.0" width="24.1" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="301.9" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (415 samples, 2.04%)</title><rect x="298.9" y="179.0" width="24.1" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="301.9" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (415 samples, 2.04%)</title><rect x="298.9" y="163.0" width="24.1" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="301.9" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ScheduledThreadPoolExecutor$DelayedWorkQueue.take (415 samples, 2.04%)</title><rect x="298.9" y="147.0" width="24.1" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="301.9" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ScheduledThreadPoolExecutor$DelayedWorkQueue.take (415 samples, 2.04%)</title><rect x="298.9" y="131.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="301.9" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.awaitNanos (415 samples, 2.04%)</title><rect x="298.9" y="115.0" width="24.1" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="301.9" y="126.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.parkNanos (415 samples, 2.04%)</title><rect x="298.9" y="99.0" width="24.1" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="301.9" y="110.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (415 samples, 2.04%)</title><rect x="298.9" y="83.0" width="24.1" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="301.9" y="94.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (415 samples, 2.04%)</title><rect x="298.9" y="67.0" width="24.1" height="15" fill="#fb7d7d" rx="2" ry="2"/>
+<text x="301.9" y="78.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-10 tid=17374] (414 samples, 2.04%)</title><rect x="323.0" y="227.0" width="24.0" height="15" fill="#f47373" rx="2" ry="2"/>
+<text x="326.0" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="323.0" y="211.0" width="24.0" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="326.0" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="323.0" y="195.0" width="24.0" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="326.0" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="323.0" y="179.0" width="24.0" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="326.0" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="323.0" y="163.0" width="24.0" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="326.0" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="323.0" y="147.0" width="24.0" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="326.0" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="323.0" y="131.0" width="24.0" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="326.0" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="323.0" y="115.0" width="24.0" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="326.0" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="323.0" y="99.0" width="24.0" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="326.0" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="323.0" y="83.0" width="24.0" height="15" fill="#e96565" rx="2" ry="2"/>
+<text x="326.0" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-11 tid=17375] (414 samples, 2.04%)</title><rect x="347.0" y="227.0" width="24.0" height="15" fill="#f17070" rx="2" ry="2"/>
+<text x="350.0" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="347.0" y="211.0" width="24.0" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="350.0" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="347.0" y="195.0" width="24.0" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="350.0" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="347.0" y="179.0" width="24.0" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="350.0" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="347.0" y="163.0" width="24.0" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="350.0" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="347.0" y="147.0" width="24.0" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="350.0" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="347.0" y="131.0" width="24.0" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="350.0" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="347.0" y="115.0" width="24.0" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="350.0" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="347.0" y="99.0" width="24.0" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="350.0" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="347.0" y="83.0" width="24.0" height="15" fill="#fd7f7f" rx="2" ry="2"/>
+<text x="350.0" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-12 tid=17376] (414 samples, 2.04%)</title><rect x="371.0" y="227.0" width="24.1" height="15" fill="#f57575" rx="2" ry="2"/>
+<text x="374.0" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="371.0" y="211.0" width="24.1" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="374.0" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="371.0" y="195.0" width="24.1" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="374.0" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="371.0" y="179.0" width="24.1" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="374.0" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="371.0" y="163.0" width="24.1" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="374.0" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="371.0" y="147.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="374.0" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="371.0" y="131.0" width="24.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="374.0" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="371.0" y="115.0" width="24.1" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="374.0" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="371.0" y="99.0" width="24.1" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="374.0" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="371.0" y="83.0" width="24.1" height="15" fill="#f67777" rx="2" ry="2"/>
+<text x="374.0" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-13 tid=17377] (414 samples, 2.04%)</title><rect x="395.1" y="227.0" width="24.0" height="15" fill="#e45f5f" rx="2" ry="2"/>
+<text x="398.1" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="395.1" y="211.0" width="24.0" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="398.1" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="395.1" y="195.0" width="24.0" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="398.1" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="395.1" y="179.0" width="24.0" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="398.1" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="395.1" y="163.0" width="24.0" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="398.1" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="395.1" y="147.0" width="24.0" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="398.1" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="395.1" y="131.0" width="24.0" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="398.1" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="395.1" y="115.0" width="24.0" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="398.1" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="395.1" y="99.0" width="24.0" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="398.1" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="395.1" y="83.0" width="24.0" height="15" fill="#e86363" rx="2" ry="2"/>
+<text x="398.1" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-14 tid=17378] (414 samples, 2.04%)</title><rect x="419.1" y="227.0" width="24.0" height="15" fill="#f87979" rx="2" ry="2"/>
+<text x="422.1" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="419.1" y="211.0" width="24.0" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="422.1" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="419.1" y="195.0" width="24.0" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="422.1" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="419.1" y="179.0" width="24.0" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="422.1" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (413 samples, 2.03%)</title><rect x="419.1" y="163.0" width="24.0" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="422.1" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (413 samples, 2.03%)</title><rect x="419.1" y="147.0" width="24.0" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="422.1" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (412 samples, 2.03%)</title><rect x="419.1" y="131.0" width="24.0" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="422.1" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (412 samples, 2.03%)</title><rect x="419.1" y="115.0" width="24.0" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="422.1" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (412 samples, 2.03%)</title><rect x="419.1" y="99.0" width="24.0" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="422.1" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (412 samples, 2.03%)</title><rect x="419.1" y="83.0" width="24.0" height="15" fill="#e35d5d" rx="2" ry="2"/>
+<text x="422.1" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-15 tid=17379] (414 samples, 2.04%)</title><rect x="443.1" y="227.0" width="24.1" height="15" fill="#e35c5c" rx="2" ry="2"/>
+<text x="446.1" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="443.1" y="211.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="446.1" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="443.1" y="195.0" width="24.1" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="446.1" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="443.1" y="179.0" width="24.1" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="446.1" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="443.1" y="163.0" width="24.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="446.1" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="443.1" y="147.0" width="24.1" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="446.1" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="443.1" y="131.0" width="24.1" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="446.1" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="443.1" y="115.0" width="24.1" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="446.1" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="443.1" y="99.0" width="24.1" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="446.1" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="443.1" y="83.0" width="24.1" height="15" fill="#e76262" rx="2" ry="2"/>
+<text x="446.1" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-16 tid=17380] (414 samples, 2.04%)</title><rect x="467.2" y="227.0" width="24.0" height="15" fill="#fb7d7d" rx="2" ry="2"/>
+<text x="470.2" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="467.2" y="211.0" width="24.0" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="470.2" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="467.2" y="195.0" width="24.0" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="470.2" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="467.2" y="179.0" width="24.0" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="470.2" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="467.2" y="163.0" width="24.0" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="470.2" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="467.2" y="147.0" width="24.0" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="470.2" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="467.2" y="131.0" width="24.0" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="470.2" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="467.2" y="115.0" width="24.0" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="470.2" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="467.2" y="99.0" width="24.0" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="470.2" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="467.2" y="83.0" width="24.0" height="15" fill="#e66161" rx="2" ry="2"/>
+<text x="470.2" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-17 tid=17381] (414 samples, 2.04%)</title><rect x="491.2" y="227.0" width="24.0" height="15" fill="#e56060" rx="2" ry="2"/>
+<text x="494.2" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="491.2" y="211.0" width="24.0" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="494.2" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="491.2" y="195.0" width="24.0" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="494.2" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="491.2" y="179.0" width="24.0" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="494.2" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="491.2" y="163.0" width="24.0" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="494.2" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="491.2" y="147.0" width="24.0" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="494.2" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="491.2" y="131.0" width="24.0" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="494.2" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="491.2" y="115.0" width="24.0" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="494.2" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="491.2" y="99.0" width="24.0" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="494.2" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="491.2" y="83.0" width="24.0" height="15" fill="#e35d5d" rx="2" ry="2"/>
+<text x="494.2" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-2 tid=17366] (415 samples, 2.04%)</title><rect x="515.2" y="227.0" width="24.1" height="15" fill="#f06f6f" rx="2" ry="2"/>
+<text x="518.2" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (415 samples, 2.04%)</title><rect x="515.2" y="211.0" width="24.1" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="518.2" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (415 samples, 2.04%)</title><rect x="515.2" y="195.0" width="24.1" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="518.2" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (415 samples, 2.04%)</title><rect x="515.2" y="179.0" width="24.1" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="518.2" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (415 samples, 2.04%)</title><rect x="515.2" y="163.0" width="24.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="518.2" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (415 samples, 2.04%)</title><rect x="515.2" y="147.0" width="24.1" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="518.2" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (415 samples, 2.04%)</title><rect x="515.2" y="131.0" width="24.1" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="518.2" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (415 samples, 2.04%)</title><rect x="515.2" y="115.0" width="24.1" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="518.2" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (415 samples, 2.04%)</title><rect x="515.2" y="99.0" width="24.1" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="518.2" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="515.2" y="83.0" width="24.1" height="15" fill="#f77777" rx="2" ry="2"/>
+<text x="518.2" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-3 tid=17367] (415 samples, 2.04%)</title><rect x="539.3" y="227.0" width="24.1" height="15" fill="#f97b7b" rx="2" ry="2"/>
+<text x="542.3" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (415 samples, 2.04%)</title><rect x="539.3" y="211.0" width="24.1" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="542.3" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (415 samples, 2.04%)</title><rect x="539.3" y="195.0" width="24.1" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="542.3" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (415 samples, 2.04%)</title><rect x="539.3" y="179.0" width="24.1" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="542.3" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (415 samples, 2.04%)</title><rect x="539.3" y="163.0" width="24.1" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="542.3" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (415 samples, 2.04%)</title><rect x="539.3" y="147.0" width="24.1" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="542.3" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (415 samples, 2.04%)</title><rect x="539.3" y="131.0" width="24.1" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="542.3" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (415 samples, 2.04%)</title><rect x="539.3" y="115.0" width="24.1" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="542.3" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (415 samples, 2.04%)</title><rect x="539.3" y="99.0" width="24.1" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="542.3" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="539.3" y="83.0" width="24.1" height="15" fill="#ef6d6d" rx="2" ry="2"/>
+<text x="542.3" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-4 tid=17368] (415 samples, 2.04%)</title><rect x="563.4" y="227.0" width="24.1" height="15" fill="#e56060" rx="2" ry="2"/>
+<text x="566.4" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (415 samples, 2.04%)</title><rect x="563.4" y="211.0" width="24.1" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="566.4" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (415 samples, 2.04%)</title><rect x="563.4" y="195.0" width="24.1" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="566.4" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (415 samples, 2.04%)</title><rect x="563.4" y="179.0" width="24.1" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="566.4" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (415 samples, 2.04%)</title><rect x="563.4" y="163.0" width="24.1" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="566.4" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (415 samples, 2.04%)</title><rect x="563.4" y="147.0" width="24.1" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="566.4" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (415 samples, 2.04%)</title><rect x="563.4" y="131.0" width="24.1" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="566.4" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (415 samples, 2.04%)</title><rect x="563.4" y="115.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="566.4" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (415 samples, 2.04%)</title><rect x="563.4" y="99.0" width="24.1" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="566.4" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="563.4" y="83.0" width="24.1" height="15" fill="#ea6666" rx="2" ry="2"/>
+<text x="566.4" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-5 tid=17369] (415 samples, 2.04%)</title><rect x="587.5" y="227.0" width="24.1" height="15" fill="#ea6767" rx="2" ry="2"/>
+<text x="590.5" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (415 samples, 2.04%)</title><rect x="587.5" y="211.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="590.5" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (415 samples, 2.04%)</title><rect x="587.5" y="195.0" width="24.1" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="590.5" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (415 samples, 2.04%)</title><rect x="587.5" y="179.0" width="24.1" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="590.5" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (415 samples, 2.04%)</title><rect x="587.5" y="163.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="590.5" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (415 samples, 2.04%)</title><rect x="587.5" y="147.0" width="24.1" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="590.5" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (415 samples, 2.04%)</title><rect x="587.5" y="131.0" width="24.1" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="590.5" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (415 samples, 2.04%)</title><rect x="587.5" y="115.0" width="24.1" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="590.5" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (415 samples, 2.04%)</title><rect x="587.5" y="99.0" width="24.1" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="590.5" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="587.5" y="83.0" width="24.1" height="15" fill="#f16f6f" rx="2" ry="2"/>
+<text x="590.5" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-6 tid=17370] (415 samples, 2.04%)</title><rect x="611.6" y="227.0" width="24.1" height="15" fill="#f67676" rx="2" ry="2"/>
+<text x="614.6" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="611.6" y="211.0" width="24.1" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="614.6" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="611.6" y="195.0" width="24.1" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="614.6" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="611.6" y="179.0" width="24.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="614.6" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="611.6" y="163.0" width="24.1" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="614.6" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="611.6" y="147.0" width="24.1" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="614.6" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="611.6" y="131.0" width="24.1" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="614.6" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="611.6" y="115.0" width="24.1" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="614.6" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="611.6" y="99.0" width="24.1" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="614.6" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="611.6" y="83.0" width="24.1" height="15" fill="#e15a5a" rx="2" ry="2"/>
+<text x="614.6" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-7 tid=17371] (414 samples, 2.04%)</title><rect x="635.7" y="227.0" width="24.0" height="15" fill="#eb6767" rx="2" ry="2"/>
+<text x="638.7" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="635.7" y="211.0" width="24.0" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="638.7" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="635.7" y="195.0" width="24.0" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="638.7" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="635.7" y="179.0" width="24.0" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="638.7" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="635.7" y="163.0" width="24.0" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="638.7" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="635.7" y="147.0" width="24.0" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="638.7" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="635.7" y="131.0" width="24.0" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="638.7" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="635.7" y="115.0" width="24.0" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="638.7" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="635.7" y="99.0" width="24.0" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="638.7" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="635.7" y="83.0" width="24.0" height="15" fill="#e66161" rx="2" ry="2"/>
+<text x="638.7" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-8 tid=17372] (414 samples, 2.04%)</title><rect x="659.7" y="227.0" width="24.0" height="15" fill="#f37272" rx="2" ry="2"/>
+<text x="662.7" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="659.7" y="211.0" width="24.0" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="662.7" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="659.7" y="195.0" width="24.0" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="662.7" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="659.7" y="179.0" width="24.0" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="662.7" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="659.7" y="163.0" width="24.0" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="662.7" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="659.7" y="147.0" width="24.0" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="662.7" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="659.7" y="131.0" width="24.0" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="662.7" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="659.7" y="115.0" width="24.0" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="662.7" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="659.7" y="99.0" width="24.0" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="662.7" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (414 samples, 2.04%)</title><rect x="659.7" y="83.0" width="24.0" height="15" fill="#f37373" rx="2" ry="2"/>
+<text x="662.7" y="94.0">_..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-9 tid=17373] (414 samples, 2.04%)</title><rect x="683.7" y="227.0" width="24.1" height="15" fill="#f67777" rx="2" ry="2"/>
+<text x="686.7" y="238.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (414 samples, 2.04%)</title><rect x="683.7" y="211.0" width="24.1" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="686.7" y="222.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (414 samples, 2.04%)</title><rect x="683.7" y="195.0" width="24.1" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="686.7" y="206.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (414 samples, 2.04%)</title><rect x="683.7" y="179.0" width="24.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="686.7" y="190.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (414 samples, 2.04%)</title><rect x="683.7" y="163.0" width="24.1" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="686.7" y="174.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (414 samples, 2.04%)</title><rect x="683.7" y="147.0" width="24.1" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="686.7" y="158.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (414 samples, 2.04%)</title><rect x="683.7" y="131.0" width="24.1" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="686.7" y="142.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/locks/LockSupport.park (414 samples, 2.04%)</title><rect x="683.7" y="115.0" width="24.1" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="686.7" y="126.0">j..</text>
+</g>
+<g>
+<title>jdk/internal/misc/Unsafe.park (414 samples, 2.04%)</title><rect x="683.7" y="99.0" width="24.1" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="686.7" y="110.0">j..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (413 samples, 2.03%)</title><rect x="683.8" y="83.0" width="24.0" height="15" fill="#e35d5d" rx="2" ry="2"/>
+<text x="686.8" y="94.0">_..</text>
+</g>
+<g>
+<title>[tid=17337] (415 samples, 2.04%)</title><rect x="707.8" y="227.0" width="24.1" height="15" fill="#e86464" rx="2" ry="2"/>
+<text x="710.8" y="238.0">[..</text>
+</g>
+<g>
+<title>__GI___pthread_timedjoin_ex (415 samples, 2.04%)</title><rect x="707.8" y="211.0" width="24.1" height="15" fill="#fb7d7d" rx="2" ry="2"/>
+<text x="710.8" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17339] (415 samples, 2.04%)</title><rect x="731.9" y="227.0" width="24.1" height="15" fill="#f57575" rx="2" ry="2"/>
+<text x="734.9" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="731.9" y="211.0" width="24.1" height="15" fill="#e35d5d" rx="2" ry="2"/>
+<text x="734.9" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17340] (415 samples, 2.04%)</title><rect x="756.0" y="227.0" width="24.0" height="15" fill="#e45e5e" rx="2" ry="2"/>
+<text x="759.0" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="756.0" y="211.0" width="24.0" height="15" fill="#eb6868" rx="2" ry="2"/>
+<text x="759.0" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17341] (415 samples, 2.04%)</title><rect x="780.0" y="227.0" width="24.1" height="15" fill="#f27171" rx="2" ry="2"/>
+<text x="783.0" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="780.0" y="211.0" width="24.1" height="15" fill="#f27171" rx="2" ry="2"/>
+<text x="783.0" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17342] (415 samples, 2.04%)</title><rect x="804.1" y="227.0" width="24.1" height="15" fill="#f47474" rx="2" ry="2"/>
+<text x="807.1" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="804.1" y="211.0" width="24.1" height="15" fill="#e96565" rx="2" ry="2"/>
+<text x="807.1" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17343] (415 samples, 2.04%)</title><rect x="828.2" y="227.0" width="24.1" height="15" fill="#f87979" rx="2" ry="2"/>
+<text x="831.2" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (415 samples, 2.04%)</title><rect x="828.2" y="211.0" width="24.1" height="15" fill="#e96565" rx="2" ry="2"/>
+<text x="831.2" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17344] (415 samples, 2.04%)</title><rect x="852.3" y="227.0" width="24.1" height="15" fill="#ea6767" rx="2" ry="2"/>
+<text x="855.3" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (415 samples, 2.04%)</title><rect x="852.3" y="211.0" width="24.1" height="15" fill="#e66161" rx="2" ry="2"/>
+<text x="855.3" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17348] (415 samples, 2.04%)</title><rect x="876.4" y="227.0" width="24.1" height="15" fill="#fe8181" rx="2" ry="2"/>
+<text x="879.4" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (400 samples, 1.97%)</title><rect x="876.5" y="211.0" width="23.2" height="15" fill="#e15a5a" rx="2" ry="2"/>
+<text x="879.5" y="222.0">_..</text>
+</g>
+<g>
+<title>start_thread (14 samples, 0.07%)</title><rect x="899.7" y="211.0" width="0.8" height="15" fill="#f97b7b" rx="2" ry="2"/>
+<text x="902.7" y="222.0"></text>
+</g>
+<g>
+<title>thread_native_entry(Thread*) (14 samples, 0.07%)</title><rect x="899.7" y="195.0" width="0.8" height="15" fill="#ea6767" rx="2" ry="2"/>
+<text x="902.7" y="206.0"></text>
+</g>
+<g>
+<title>Thread::call_run() (14 samples, 0.07%)</title><rect x="899.7" y="179.0" width="0.8" height="15" fill="#cdcd3d" rx="2" ry="2"/>
+<text x="902.7" y="190.0"></text>
+</g>
+<g>
+<title>JavaThread::run() (14 samples, 0.07%)</title><rect x="899.7" y="163.0" width="0.8" height="15" fill="#d5d540" rx="2" ry="2"/>
+<text x="902.7" y="174.0"></text>
+</g>
+<g>
+<title>JavaThread::thread_main_inner() (14 samples, 0.07%)</title><rect x="899.7" y="147.0" width="0.8" height="15" fill="#e4e445" rx="2" ry="2"/>
+<text x="902.7" y="158.0"></text>
+</g>
+<g>
+<title>CompileBroker::compiler_thread_loop() (14 samples, 0.07%)</title><rect x="899.7" y="131.0" width="0.8" height="15" fill="#e3e345" rx="2" ry="2"/>
+<text x="902.7" y="142.0"></text>
+</g>
+<g>
+<title>CompileBroker::invoke_compiler_on_method(CompileTask*) (14 samples, 0.07%)</title><rect x="899.7" y="115.0" width="0.8" height="15" fill="#dede43" rx="2" ry="2"/>
+<text x="902.7" y="126.0"></text>
+</g>
+<g>
+<title>C2Compiler::compile_method(ciEnv*, ciMethod*, int, DirectiveSet*) (14 samples, 0.07%)</title><rect x="899.7" y="99.0" width="0.8" height="15" fill="#dcdc42" rx="2" ry="2"/>
+<text x="902.7" y="110.0"></text>
+</g>
+<g>
+<title>Compile::Compile(ciEnv*, C2Compiler*, ciMethod*, int, bool, bool, bool, DirectiveSet*) (14 samples, 0.07%)</title><rect x="899.7" y="83.0" width="0.8" height="15" fill="#cbcb3d" rx="2" ry="2"/>
+<text x="902.7" y="94.0"></text>
+</g>
+<g>
+<title>Compile::Code_Gen() (10 samples, 0.05%)</title><rect x="899.7" y="67.0" width="0.6" height="15" fill="#dcdc42" rx="2" ry="2"/>
+<text x="902.7" y="78.0"></text>
+</g>
+<g>
+<title>PhaseChaitin::Register_Allocate() (7 samples, 0.03%)</title><rect x="899.9" y="51.0" width="0.4" height="15" fill="#d3d33f" rx="2" ry="2"/>
+<text x="902.9" y="62.0"></text>
+</g>
+<g>
+<title>[tid=17349] (415 samples, 2.04%)</title><rect x="900.5" y="227.0" width="24.1" height="15" fill="#f87878" rx="2" ry="2"/>
+<text x="903.5" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (414 samples, 2.04%)</title><rect x="900.5" y="211.0" width="24.0" height="15" fill="#fd7f7f" rx="2" ry="2"/>
+<text x="903.5" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17350] (415 samples, 2.04%)</title><rect x="924.6" y="227.0" width="24.1" height="15" fill="#fc7e7e" rx="2" ry="2"/>
+<text x="927.6" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (415 samples, 2.04%)</title><rect x="924.6" y="211.0" width="24.1" height="15" fill="#fa7c7c" rx="2" ry="2"/>
+<text x="927.6" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17354] (415 samples, 2.04%)</title><rect x="948.7" y="227.0" width="24.1" height="15" fill="#e76262" rx="2" ry="2"/>
+<text x="951.7" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_wait (415 samples, 2.04%)</title><rect x="948.7" y="211.0" width="24.1" height="15" fill="#f87979" rx="2" ry="2"/>
+<text x="951.7" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17355] (415 samples, 2.04%)</title><rect x="972.8" y="227.0" width="24.1" height="15" fill="#f16f6f" rx="2" ry="2"/>
+<text x="975.8" y="238.0">[..</text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (415 samples, 2.04%)</title><rect x="972.8" y="211.0" width="24.1" height="15" fill="#e96565" rx="2" ry="2"/>
+<text x="975.8" y="222.0">_..</text>
+</g>
+<g>
+<title>[tid=17357] (415 samples, 2.04%)</title><rect x="996.9" y="227.0" width="24.1" height="15" fill="#fc7e7e" rx="2" ry="2"/>
+<text x="999.9" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="996.9" y="211.0" width="24.1" height="15" fill="#fc7e7e" rx="2" ry="2"/>
+<text x="999.9" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17358] (415 samples, 2.04%)</title><rect x="1021.0" y="227.0" width="24.0" height="15" fill="#fb7c7c" rx="2" ry="2"/>
+<text x="1024.0" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="1021.0" y="211.0" width="24.0" height="15" fill="#ef6d6d" rx="2" ry="2"/>
+<text x="1024.0" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17359] (415 samples, 2.04%)</title><rect x="1045.0" y="227.0" width="24.1" height="15" fill="#f27171" rx="2" ry="2"/>
+<text x="1048.0" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="1045.0" y="211.0" width="24.1" height="15" fill="#e56060" rx="2" ry="2"/>
+<text x="1048.0" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17360] (415 samples, 2.04%)</title><rect x="1069.1" y="227.0" width="24.1" height="15" fill="#e96464" rx="2" ry="2"/>
+<text x="1072.1" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="1069.1" y="211.0" width="24.1" height="15" fill="#fa7c7c" rx="2" ry="2"/>
+<text x="1072.1" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17361] (415 samples, 2.04%)</title><rect x="1093.2" y="227.0" width="24.1" height="15" fill="#ef6d6d" rx="2" ry="2"/>
+<text x="1096.2" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="1093.2" y="211.0" width="24.1" height="15" fill="#ee6c6c" rx="2" ry="2"/>
+<text x="1096.2" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17362] (415 samples, 2.04%)</title><rect x="1117.3" y="227.0" width="24.1" height="15" fill="#fa7b7b" rx="2" ry="2"/>
+<text x="1120.3" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (415 samples, 2.04%)</title><rect x="1117.3" y="211.0" width="24.1" height="15" fill="#ef6d6d" rx="2" ry="2"/>
+<text x="1120.3" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17410] (414 samples, 2.04%)</title><rect x="1141.4" y="227.0" width="24.0" height="15" fill="#e96565" rx="2" ry="2"/>
+<text x="1144.4" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (414 samples, 2.04%)</title><rect x="1141.4" y="211.0" width="24.0" height="15" fill="#e66161" rx="2" ry="2"/>
+<text x="1144.4" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17411] (414 samples, 2.04%)</title><rect x="1165.4" y="227.0" width="24.1" height="15" fill="#f57575" rx="2" ry="2"/>
+<text x="1168.4" y="238.0">[..</text>
+</g>
+<g>
+<title>do_futex_wait.constprop.1 (414 samples, 2.04%)</title><rect x="1165.4" y="211.0" width="24.1" height="15" fill="#f67777" rx="2" ry="2"/>
+<text x="1168.4" y="222.0">d..</text>
+</g>
+<g>
+<title>[tid=17515] (6 samples, 0.03%)</title><rect x="1189.5" y="227.0" width="0.3" height="15" fill="#e55f5f" rx="2" ry="2"/>
+<text x="1192.5" y="238.0"></text>
+</g>
+<g>
+<title>__pthread_cond_timedwait (6 samples, 0.03%)</title><rect x="1189.5" y="211.0" width="0.3" height="15" fill="#f37272" rx="2" ry="2"/>
+<text x="1192.5" y="222.0"></text>
+</g>
+</g>
+</svg>

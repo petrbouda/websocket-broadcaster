@@ -1,0 +1,3365 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1200" height="1030" onload="init(evt)" viewBox="0 0 1200 1030" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<style type="text/css">
+	text { font-family:Verdana; font-size:12px; fill:rgb(0,0,0); }
+	#search { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:17px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+	}
+
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom();
+			zoom(target);
+		}
+		else if (e.target.id == "unzoom") unzoom();
+		else if (e.target.id == "search") search_prompt();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+	}, false)
+
+	// functions
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+		return;
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 12 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		// Fit in full text width
+		if (/^ *$/.test(txt) || t.getSubStringLength(0, txt.length) < w)
+			return;
+
+		for (var x = txt.length - 2; x > 0; x--) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+	}
+	function unzoom() {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			update_text(el[i]);
+		}
+	}
+
+	// search
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)", "");
+			if (term != null) {
+				search(term)
+			}
+		} else {
+			reset_search();
+			searching = 0;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		var re = new RegExp(term);
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0" y="0" width="100%" height="100%" fill="rgb(240,240,220)"/>
+<text id="title" x="600" y="24">Flame Graph</text>
+<text id="details" x="10" y="1013"> </text>
+<text id="unzoom" x="10" y="24" class="hide">Reset Zoom</text>
+<text id="search" x="1090" y="24">Search</text>
+<text id="matched" x="1090" y="1013"> </text>
+<g id="frames">
+<g>
+<title>all (133 samples, 100.00%)</title><rect x="10.0" y="979.0" width="1180.0" height="15" fill="#fa7b7b" rx="2" ry="2"/>
+<text x="13.0" y="990.0">all</text>
+</g>
+<g>
+<title>[AMQP Connection 127.0.0.1:5672 tid=18408] (24 samples, 18.05%)</title><rect x="10.0" y="963.0" width="212.9" height="15" fill="#f97a7a" rx="2" ry="2"/>
+<text x="13.0" y="974.0">[AMQP Connection 127.0.0.1:5..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (24 samples, 18.05%)</title><rect x="10.0" y="947.0" width="212.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="13.0" y="958.0">java/lang/Thread.run</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQConnection$MainLoop.run (24 samples, 18.05%)</title><rect x="10.0" y="931.0" width="212.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="13.0" y="942.0">com/rabbitmq/client/impl/AMQ..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQConnection.access$300 (17 samples, 12.78%)</title><rect x="10.0" y="915.0" width="150.8" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="13.0" y="926.0">com/rabbitmq/client..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQConnection.readFrame (17 samples, 12.78%)</title><rect x="10.0" y="899.0" width="150.8" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="13.0" y="910.0">com/rabbitmq/client..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQChannel.handleFrame (17 samples, 12.78%)</title><rect x="10.0" y="883.0" width="150.8" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="13.0" y="894.0">com/rabbitmq/client..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQChannel.handleCompleteInboundCommand (3 samples, 2.26%)</title><rect x="10.0" y="867.0" width="26.6" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="13.0" y="878.0">c..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ChannelN.processAsync (3 samples, 2.26%)</title><rect x="10.0" y="851.0" width="26.6" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="13.0" y="862.0">c..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/recovery/RecoveryAwareChannelN.processDelivery (3 samples, 2.26%)</title><rect x="10.0" y="835.0" width="26.6" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="13.0" y="846.0">c..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ChannelN.processDelivery (2 samples, 1.50%)</title><rect x="10.0" y="819.0" width="17.7" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="13.0" y="830.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher.handleDelivery (2 samples, 1.50%)</title><rect x="10.0" y="803.0" width="17.7" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="13.0" y="814.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher.executeUnlessShuttingDown (2 samples, 1.50%)</title><rect x="10.0" y="787.0" width="17.7" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="13.0" y="798.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher.execute (2 samples, 1.50%)</title><rect x="10.0" y="771.0" width="17.7" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="13.0" y="782.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService.addWork (2 samples, 1.50%)</title><rect x="10.0" y="755.0" width="17.7" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="13.0" y="766.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/WorkPool.addWorkItem (2 samples, 1.50%)</title><rect x="10.0" y="739.0" width="17.7" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="13.0" y="750.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/WorkPool$$Lambda$169/723039890.accept (1 samples, 0.75%)</title><rect x="10.0" y="723.0" width="8.9" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="13.0" y="734.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/WorkPool.lambda$new$1 (1 samples, 0.75%)</title><rect x="10.0" y="707.0" width="8.9" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="13.0" y="718.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/VariableLinkedBlockingQueue.put (1 samples, 0.75%)</title><rect x="10.0" y="691.0" width="8.9" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="13.0" y="702.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/VariableLinkedBlockingQueue.insert (1 samples, 0.75%)</title><rect x="10.0" y="675.0" width="8.9" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="13.0" y="686.0"></text>
+</g>
+<g>
+<title>com.rabbitmq.client.impl.VariableLinkedBlockingQueue$Node (1 samples, 0.75%)</title><rect x="10.0" y="659.0" width="8.9" height="15" fill="#63d1d1" rx="2" ry="2"/>
+<text x="13.0" y="670.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/WorkPool.dormantToReady (1 samples, 0.75%)</title><rect x="18.9" y="723.0" width="8.8" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="21.9" y="734.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/SetQueue.addIfNotPresent (1 samples, 0.75%)</title><rect x="18.9" y="707.0" width="8.8" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="21.9" y="718.0"></text>
+</g>
+<g>
+<title>java/util/HashSet.add (1 samples, 0.75%)</title><rect x="18.9" y="691.0" width="8.8" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="21.9" y="702.0"></text>
+</g>
+<g>
+<title>java/util/HashMap.put (1 samples, 0.75%)</title><rect x="18.9" y="675.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="21.9" y="686.0"></text>
+</g>
+<g>
+<title>java/util/HashMap.putVal (1 samples, 0.75%)</title><rect x="18.9" y="659.0" width="8.8" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="21.9" y="670.0"></text>
+</g>
+<g>
+<title>java/util/HashMap.newNode (1 samples, 0.75%)</title><rect x="18.9" y="643.0" width="8.8" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="21.9" y="654.0"></text>
+</g>
+<g>
+<title>java.util.HashMap$Node (1 samples, 0.75%)</title><rect x="18.9" y="627.0" width="8.8" height="15" fill="#56c4c4" rx="2" ry="2"/>
+<text x="21.9" y="638.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/recovery/RecoveryAwareChannelN.offsetDeliveryTag (1 samples, 0.75%)</title><rect x="27.7" y="819.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="30.7" y="830.0"></text>
+</g>
+<g>
+<title>com.rabbitmq.client.impl.AMQImpl$Basic$Deliver (1 samples, 0.75%)</title><rect x="27.7" y="803.0" width="8.9" height="15" fill="#5ccaca" rx="2" ry="2"/>
+<text x="30.7" y="814.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQCommand.handleFrame (14 samples, 10.53%)</title><rect x="36.6" y="867.0" width="124.2" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="39.6" y="878.0">com/rabbitmq/cl..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/CommandAssembler.handleFrame (14 samples, 10.53%)</title><rect x="36.6" y="851.0" width="124.2" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="39.6" y="862.0">com/rabbitmq/cl..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/CommandAssembler.consumeHeaderFrame (7 samples, 5.26%)</title><rect x="36.6" y="835.0" width="62.1" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="39.6" y="846.0">com/ra..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQImpl.readContentHeaderFrom (1 samples, 0.75%)</title><rect x="36.6" y="819.0" width="8.9" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="39.6" y="830.0"></text>
+</g>
+<g>
+<title>com.rabbitmq.client.AMQP$BasicProperties (1 samples, 0.75%)</title><rect x="36.6" y="803.0" width="8.9" height="15" fill="#65d3d3" rx="2" ry="2"/>
+<text x="39.6" y="814.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/Frame.getInputStream (6 samples, 4.51%)</title><rect x="45.5" y="819.0" width="53.2" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="48.5" y="830.0">com/r..</text>
+</g>
+<g>
+<title>java.io.ByteArrayInputStream (1 samples, 0.75%)</title><rect x="45.5" y="803.0" width="8.9" height="15" fill="#6ddbdb" rx="2" ry="2"/>
+<text x="48.5" y="814.0"></text>
+</g>
+<g>
+<title>java/io/DataInputStream.&lt;init&gt; (5 samples, 3.76%)</title><rect x="54.4" y="803.0" width="44.3" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="57.4" y="814.0">java..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="54.4" y="787.0" width="26.6" height="15" fill="#6ad8d8" rx="2" ry="2"/>
+<text x="57.4" y="798.0">b..</text>
+</g>
+<g>
+<title>char[] (2 samples, 1.50%)</title><rect x="81.0" y="787.0" width="17.7" height="15" fill="#54c2c2" rx="2" ry="2"/>
+<text x="84.0" y="798.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/CommandAssembler.consumeMethodFrame (7 samples, 5.26%)</title><rect x="98.7" y="835.0" width="62.1" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="101.7" y="846.0">com/ra..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQImpl.readMethodFrom (5 samples, 3.76%)</title><rect x="98.7" y="819.0" width="44.4" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="101.7" y="830.0">com/..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/AMQImpl$Basic$Deliver.&lt;init&gt; (5 samples, 3.76%)</title><rect x="98.7" y="803.0" width="44.4" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="101.7" y="814.0">com/..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/MethodArgumentReader.readShortstr (5 samples, 3.76%)</title><rect x="98.7" y="787.0" width="44.4" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="101.7" y="798.0">com/..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ValueReader.readShortstr (5 samples, 3.76%)</title><rect x="98.7" y="771.0" width="44.4" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="101.7" y="782.0">com/..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ValueReader.readShortstr (5 samples, 3.76%)</title><rect x="98.7" y="755.0" width="44.4" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="101.7" y="766.0">com/..</text>
+</g>
+<g>
+<title>java.lang.String (1 samples, 0.75%)</title><rect x="98.7" y="739.0" width="8.9" height="15" fill="#69d7d7" rx="2" ry="2"/>
+<text x="101.7" y="750.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (4 samples, 3.01%)</title><rect x="107.6" y="739.0" width="35.5" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="110.6" y="750.0">jav..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (4 samples, 3.01%)</title><rect x="107.6" y="723.0" width="35.5" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="110.6" y="734.0">jav..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (4 samples, 3.01%)</title><rect x="107.6" y="707.0" width="35.5" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="110.6" y="718.0">jav..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (4 samples, 3.01%)</title><rect x="107.6" y="691.0" width="35.5" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="110.6" y="702.0">jav..</text>
+</g>
+<g>
+<title>java/util/Arrays.copyOfRange (4 samples, 3.01%)</title><rect x="107.6" y="675.0" width="35.5" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="110.6" y="686.0">jav..</text>
+</g>
+<g>
+<title>byte[] (4 samples, 3.01%)</title><rect x="107.6" y="659.0" width="35.5" height="15" fill="#56c4c4" rx="2" ry="2"/>
+<text x="110.6" y="670.0">byt..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/Frame.getInputStream (2 samples, 1.50%)</title><rect x="143.1" y="819.0" width="17.7" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="146.1" y="830.0"></text>
+</g>
+<g>
+<title>java/io/DataInputStream.&lt;init&gt; (2 samples, 1.50%)</title><rect x="143.1" y="803.0" width="17.7" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="146.1" y="814.0"></text>
+</g>
+<g>
+<title>char[] (2 samples, 1.50%)</title><rect x="143.1" y="787.0" width="17.7" height="15" fill="#52c0c0" rx="2" ry="2"/>
+<text x="146.1" y="798.0"></text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/SocketFrameHandler.readFrame (7 samples, 5.26%)</title><rect x="160.8" y="915.0" width="62.1" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="163.8" y="926.0">com/ra..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/Frame.readFrom (7 samples, 5.26%)</title><rect x="160.8" y="899.0" width="62.1" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="163.8" y="910.0">com/ra..</text>
+</g>
+<g>
+<title>byte[] (6 samples, 4.51%)</title><rect x="160.8" y="883.0" width="53.3" height="15" fill="#59c7c7" rx="2" ry="2"/>
+<text x="163.8" y="894.0">byte[]</text>
+</g>
+<g>
+<title>com.rabbitmq.client.impl.Frame (1 samples, 0.75%)</title><rect x="214.1" y="883.0" width="8.8" height="15" fill="#63d1d1" rx="2" ry="2"/>
+<text x="217.1" y="894.0"></text>
+</g>
+<g>
+<title>[Attach Listener tid=18538] (1 samples, 0.75%)</title><rect x="222.9" y="963.0" width="8.9" height="15" fill="#f97a7a" rx="2" ry="2"/>
+<text x="225.9" y="974.0"></text>
+</g>
+<g>
+<title>[not_walkable] (1 samples, 0.75%)</title><rect x="222.9" y="947.0" width="8.9" height="15" fill="#e45f5f" rx="2" ry="2"/>
+<text x="225.9" y="958.0"></text>
+</g>
+<g>
+<title>java.lang.String (1 samples, 0.75%)</title><rect x="222.9" y="931.0" width="8.9" height="15" fill="#51bfbf" rx="2" ry="2"/>
+<text x="225.9" y="942.0"></text>
+</g>
+<g>
+<title>[epollEventLoopGroup-3-1 tid=18446] (38 samples, 28.57%)</title><rect x="231.8" y="963.0" width="337.1" height="15" fill="#e25c5c" rx="2" ry="2"/>
+<text x="234.8" y="974.0">[epollEventLoopGroup-3-1 tid=18446]</text>
+</g>
+<g>
+<title>java/lang/Thread.run (38 samples, 28.57%)</title><rect x="231.8" y="947.0" width="337.1" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="234.8" y="958.0">java/lang/Thread.run</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/FastThreadLocalRunnable.run (38 samples, 28.57%)</title><rect x="231.8" y="931.0" width="337.1" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="234.8" y="942.0">io/netty/util/concurrent/FastThreadLocalRunnab..</text>
+</g>
+<g>
+<title>io/netty/util/internal/ThreadExecutorMap$2.run (38 samples, 28.57%)</title><rect x="231.8" y="915.0" width="337.1" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="234.8" y="926.0">io/netty/util/internal/ThreadExecutorMap$2.run</text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor$5.run (38 samples, 28.57%)</title><rect x="231.8" y="899.0" width="337.1" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="234.8" y="910.0">io/netty/util/concurrent/SingleThreadEventExec..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.run (38 samples, 28.57%)</title><rect x="231.8" y="883.0" width="337.1" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="234.8" y="894.0">io/netty/channel/epoll/EpollEventLoop.run</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.processReady (38 samples, 28.57%)</title><rect x="231.8" y="867.0" width="337.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="234.8" y="878.0">io/netty/channel/epoll/EpollEventLoop.processR..</text>
+</g>
+<g>
+<title>io/netty/channel/epoll/AbstractEpollStreamChannel$EpollStreamUnsafe.epollInReady (38 samples, 28.57%)</title><rect x="231.8" y="851.0" width="337.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="234.8" y="862.0">io/netty/channel/epoll/AbstractEpollStreamChan..</text>
+</g>
+<g>
+<title>io/netty/channel/DefaultChannelPipeline.fireChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="835.0" width="337.1" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="234.8" y="846.0">io/netty/channel/DefaultChannelPipeline.fireCh..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="819.0" width="337.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="234.8" y="830.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="803.0" width="337.1" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="234.8" y="814.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/DefaultChannelPipeline$HeadContext.channelRead (38 samples, 28.57%)</title><rect x="231.8" y="787.0" width="337.1" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="234.8" y="798.0">io/netty/channel/DefaultChannelPipeline$HeadCo..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.fireChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="771.0" width="337.1" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="234.8" y="782.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="755.0" width="337.1" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="234.8" y="766.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="739.0" width="337.1" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="234.8" y="750.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/CombinedChannelDuplexHandler.channelRead (38 samples, 28.57%)</title><rect x="231.8" y="723.0" width="337.1" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="234.8" y="734.0">io/netty/channel/CombinedChannelDuplexHandler...</text>
+</g>
+<g>
+<title>io/netty/handler/codec/ByteToMessageDecoder.channelRead (38 samples, 28.57%)</title><rect x="231.8" y="707.0" width="337.1" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="234.8" y="718.0">io/netty/handler/codec/ByteToMessageDecoder.ch..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/ByteToMessageDecoder.fireChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="691.0" width="337.1" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="234.8" y="702.0">io/netty/handler/codec/ByteToMessageDecoder.fi..</text>
+</g>
+<g>
+<title>io/netty/channel/CombinedChannelDuplexHandler$DelegatingChannelHandlerContext.fireChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="675.0" width="337.1" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="234.8" y="686.0">io/netty/channel/CombinedChannelDuplexHandler$..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.fireChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="659.0" width="337.1" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="234.8" y="670.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="643.0" width="337.1" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="234.8" y="654.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="627.0" width="337.1" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="234.8" y="638.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/MessageToMessageDecoder.channelRead (38 samples, 28.57%)</title><rect x="231.8" y="611.0" width="337.1" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="234.8" y="622.0">io/netty/handler/codec/MessageToMessageDecoder..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.fireChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="595.0" width="337.1" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="234.8" y="606.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="579.0" width="337.1" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="234.8" y="590.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeChannelRead (38 samples, 28.57%)</title><rect x="231.8" y="563.0" width="337.1" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="234.8" y="574.0">io/netty/channel/AbstractChannelHandlerContext..</text>
+</g>
+<g>
+<title>io/netty/channel/SimpleChannelInboundHandler.channelRead (38 samples, 28.57%)</title><rect x="231.8" y="547.0" width="337.1" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="234.8" y="558.0">io/netty/channel/SimpleChannelInboundHandler.c..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/netty/HttpRequestHandler.channelRead0 (38 samples, 28.57%)</title><rect x="231.8" y="531.0" width="337.1" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="234.8" y="542.0">pbouda/broadcaster/server/netty/HttpRequestHan..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/netty/HttpRequestHandler.channelRead0 (38 samples, 28.57%)</title><rect x="231.8" y="515.0" width="337.1" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="234.8" y="526.0">pbouda/broadcaster/server/netty/HttpRequestHan..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/netty/route/PrometheusRoute.process (38 samples, 28.57%)</title><rect x="231.8" y="499.0" width="337.1" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="234.8" y="510.0">pbouda/broadcaster/server/netty/route/Promethe..</text>
+</g>
+<g>
+<title>io/micrometer/prometheus/PrometheusMeterRegistry.scrape (35 samples, 26.32%)</title><rect x="231.8" y="483.0" width="310.5" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="234.8" y="494.0">io/micrometer/prometheus/PrometheusMeterRe..</text>
+</g>
+<g>
+<title>io/micrometer/prometheus/PrometheusMeterRegistry.scrape (33 samples, 24.81%)</title><rect x="231.8" y="467.0" width="292.8" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="234.8" y="478.0">io/micrometer/prometheus/PrometheusMete..</text>
+</g>
+<g>
+<title>io/prometheus/client/exporter/common/TextFormat.write004 (33 samples, 24.81%)</title><rect x="231.8" y="451.0" width="292.8" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="234.8" y="462.0">io/prometheus/client/exporter/common/Te..</text>
+</g>
+<g>
+<title>io/prometheus/client/Collector.doubleToGoString (1 samples, 0.75%)</title><rect x="231.8" y="435.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="234.8" y="446.0"></text>
+</g>
+<g>
+<title>java/lang/Double.toString (1 samples, 0.75%)</title><rect x="231.8" y="419.0" width="8.9" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="234.8" y="430.0"></text>
+</g>
+<g>
+<title>jdk/internal/math/FloatingDecimal.toJavaFormatString (1 samples, 0.75%)</title><rect x="231.8" y="403.0" width="8.9" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="234.8" y="414.0"></text>
+</g>
+<g>
+<title>jdk/internal/math/FloatingDecimal$BinaryToASCIIBuffer.toJavaFormatString (1 samples, 0.75%)</title><rect x="231.8" y="387.0" width="8.9" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="234.8" y="398.0"></text>
+</g>
+<g>
+<title>java.lang.String (1 samples, 0.75%)</title><rect x="231.8" y="371.0" width="8.9" height="15" fill="#62d0d0" rx="2" ry="2"/>
+<text x="234.8" y="382.0"></text>
+</g>
+<g>
+<title>io/prometheus/client/CollectorRegistry$MetricFamilySamplesEnumeration.nextElement (32 samples, 24.06%)</title><rect x="240.7" y="435.0" width="283.9" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="243.7" y="446.0">io/prometheus/client/CollectorRegistry..</text>
+</g>
+<g>
+<title>io/prometheus/client/CollectorRegistry$MetricFamilySamplesEnumeration.nextElement (32 samples, 24.06%)</title><rect x="240.7" y="419.0" width="283.9" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="243.7" y="430.0">io/prometheus/client/CollectorRegistry..</text>
+</g>
+<g>
+<title>io/prometheus/client/CollectorRegistry$MetricFamilySamplesEnumeration.findNextElement (32 samples, 24.06%)</title><rect x="240.7" y="403.0" width="283.9" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="243.7" y="414.0">io/prometheus/client/CollectorRegistry..</text>
+</g>
+<g>
+<title>io/micrometer/prometheus/MicrometerCollector.collect (32 samples, 24.06%)</title><rect x="240.7" y="387.0" width="283.9" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="243.7" y="398.0">io/micrometer/prometheus/MicrometerCol..</text>
+</g>
+<g>
+<title>io/micrometer/prometheus/PrometheusMeterRegistry$$Lambda$122/841262455.samples (30 samples, 22.56%)</title><rect x="240.7" y="371.0" width="266.1" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="243.7" y="382.0">io/micrometer/prometheus/PrometheusM..</text>
+</g>
+<g>
+<title>io/micrometer/prometheus/PrometheusMeterRegistry.lambda$newGauge$3 (30 samples, 22.56%)</title><rect x="240.7" y="355.0" width="266.1" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="243.7" y="366.0">io/micrometer/prometheus/PrometheusM..</text>
+</g>
+<g>
+<title>io/micrometer/core/instrument/internal/DefaultGauge.value (30 samples, 22.56%)</title><rect x="240.7" y="339.0" width="266.1" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="243.7" y="350.0">io/micrometer/core/instrument/intern..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/ProcessMemoryMetrics$$Lambda$154/1168420930.applyAsDouble (26 samples, 19.55%)</title><rect x="240.7" y="323.0" width="230.7" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="243.7" y="334.0">io/github/mweirauch/micrometer..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/ProcessMemoryMetrics.lambda$bindTo$0 (26 samples, 19.55%)</title><rect x="240.7" y="307.0" width="230.7" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="243.7" y="318.0">io/github/mweirauch/micrometer..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/ProcessMemoryMetrics.value (26 samples, 19.55%)</title><rect x="240.7" y="291.0" width="230.7" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="243.7" y="302.0">io/github/mweirauch/micrometer..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsSmaps.get (26 samples, 19.55%)</title><rect x="240.7" y="275.0" width="230.7" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="243.7" y="286.0">io/github/mweirauch/micrometer..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsEntry.get (26 samples, 19.55%)</title><rect x="240.7" y="259.0" width="230.7" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="243.7" y="270.0">io/github/mweirauch/micrometer..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsEntry.collect (26 samples, 19.55%)</title><rect x="240.7" y="243.0" width="230.7" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="243.7" y="254.0">io/github/mweirauch/micrometer..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsReader.read (26 samples, 19.55%)</title><rect x="240.7" y="227.0" width="230.7" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="243.7" y="238.0">io/github/mweirauch/micrometer..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsReader.readPath (26 samples, 19.55%)</title><rect x="240.7" y="211.0" width="230.7" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="243.7" y="222.0">io/github/mweirauch/micrometer..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsEntry$$Lambda$183/1863250074.accept (14 samples, 10.53%)</title><rect x="240.7" y="195.0" width="124.2" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="243.7" y="206.0">io/github/mweir..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsEntry.lambda$collect$0 (14 samples, 10.53%)</title><rect x="240.7" y="179.0" width="124.2" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="243.7" y="190.0">io/github/mweir..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsSmaps.handle (14 samples, 10.53%)</title><rect x="240.7" y="163.0" width="124.2" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="243.7" y="174.0">io/github/mweir..</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsSmaps.parseKiloBytes (10 samples, 7.52%)</title><rect x="240.7" y="147.0" width="88.7" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="243.7" y="158.0">io/github/..</text>
+</g>
+<g>
+<title>java/lang/Double.parseDouble (1 samples, 0.75%)</title><rect x="240.7" y="131.0" width="8.8" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="243.7" y="142.0"></text>
+</g>
+<g>
+<title>jdk/internal/math/FloatingDecimal.parseDouble (1 samples, 0.75%)</title><rect x="240.7" y="115.0" width="8.8" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="243.7" y="126.0"></text>
+</g>
+<g>
+<title>jdk/internal/math/FloatingDecimal.readJavaFormatString (1 samples, 0.75%)</title><rect x="240.7" y="99.0" width="8.8" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="243.7" y="110.0"></text>
+</g>
+<g>
+<title>char[] (1 samples, 0.75%)</title><rect x="240.7" y="83.0" width="8.8" height="15" fill="#66d4d4" rx="2" ry="2"/>
+<text x="243.7" y="94.0"></text>
+</g>
+<g>
+<title>java/util/regex/Matcher.group (1 samples, 0.75%)</title><rect x="249.5" y="131.0" width="8.9" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="252.5" y="142.0"></text>
+</g>
+<g>
+<title>java/util/regex/Matcher.getSubSequence (1 samples, 0.75%)</title><rect x="249.5" y="115.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="252.5" y="126.0"></text>
+</g>
+<g>
+<title>java/lang/String.subSequence (1 samples, 0.75%)</title><rect x="249.5" y="99.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="252.5" y="110.0"></text>
+</g>
+<g>
+<title>java/lang/String.substring (1 samples, 0.75%)</title><rect x="249.5" y="83.0" width="8.9" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="252.5" y="94.0"></text>
+</g>
+<g>
+<title>java/lang/StringLatin1.newString (1 samples, 0.75%)</title><rect x="249.5" y="67.0" width="8.9" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="252.5" y="78.0"></text>
+</g>
+<g>
+<title>java/util/Arrays.copyOfRange (1 samples, 0.75%)</title><rect x="249.5" y="51.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="252.5" y="62.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="249.5" y="35.0" width="8.9" height="15" fill="#64d2d2" rx="2" ry="2"/>
+<text x="252.5" y="46.0"></text>
+</g>
+<g>
+<title>java/util/regex/Pattern.matcher (8 samples, 6.02%)</title><rect x="258.4" y="131.0" width="71.0" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="261.4" y="142.0">java/uti..</text>
+</g>
+<g>
+<title>java.util.regex.Matcher (3 samples, 2.26%)</title><rect x="258.4" y="115.0" width="26.6" height="15" fill="#63d1d1" rx="2" ry="2"/>
+<text x="261.4" y="126.0">j..</text>
+</g>
+<g>
+<title>java/util/regex/Matcher.&lt;init&gt; (5 samples, 3.76%)</title><rect x="285.0" y="115.0" width="44.4" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="288.0" y="126.0">java..</text>
+</g>
+<g>
+<title>int[] (5 samples, 3.76%)</title><rect x="285.0" y="99.0" width="44.4" height="15" fill="#5fcdcd" rx="2" ry="2"/>
+<text x="288.0" y="110.0">int[]</text>
+</g>
+<g>
+<title>java/lang/Double.valueOf (1 samples, 0.75%)</title><rect x="329.4" y="147.0" width="8.9" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="332.4" y="158.0"></text>
+</g>
+<g>
+<title>java.lang.Double (1 samples, 0.75%)</title><rect x="329.4" y="131.0" width="8.9" height="15" fill="#62d0d0" rx="2" ry="2"/>
+<text x="332.4" y="142.0"></text>
+</g>
+<g>
+<title>java/lang/invoke/Invokers$Holder.linkToTargetMethod (2 samples, 1.50%)</title><rect x="338.3" y="147.0" width="17.7" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="341.3" y="158.0"></text>
+</g>
+<g>
+<title>java/lang/invoke/DirectMethodHandle$Holder.invokeStatic (2 samples, 1.50%)</title><rect x="338.3" y="131.0" width="17.7" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="341.3" y="142.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsSmaps$$Lambda$184/1014880535.get$Lambda (2 samples, 1.50%)</title><rect x="338.3" y="115.0" width="17.7" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="341.3" y="126.0"></text>
+</g>
+<g>
+<title>io.github.mweirauch.micrometer.jvm.extras.procfs.ProcfsSmaps$$Lambda$184 (2 samples, 1.50%)</title><rect x="338.3" y="99.0" width="17.7" height="15" fill="#5ac8c8" rx="2" ry="2"/>
+<text x="341.3" y="110.0"></text>
+</g>
+<g>
+<title>java/util/HashMap.compute (1 samples, 0.75%)</title><rect x="356.0" y="147.0" width="8.9" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="359.0" y="158.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsSmaps$$Lambda$184/1014880535.apply (1 samples, 0.75%)</title><rect x="356.0" y="131.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="359.0" y="142.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsSmaps.lambda$handle$0 (1 samples, 0.75%)</title><rect x="356.0" y="115.0" width="8.9" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="359.0" y="126.0"></text>
+</g>
+<g>
+<title>java/lang/Double.valueOf (1 samples, 0.75%)</title><rect x="356.0" y="99.0" width="8.9" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="359.0" y="110.0"></text>
+</g>
+<g>
+<title>java.lang.Double (1 samples, 0.75%)</title><rect x="356.0" y="83.0" width="8.9" height="15" fill="#50bebe" rx="2" ry="2"/>
+<text x="359.0" y="94.0"></text>
+</g>
+<g>
+<title>java/io/BufferedReader.readLine (12 samples, 9.02%)</title><rect x="364.9" y="195.0" width="106.5" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="367.9" y="206.0">java/io/Buffe..</text>
+</g>
+<g>
+<title>java/io/BufferedReader.readLine (12 samples, 9.02%)</title><rect x="364.9" y="179.0" width="106.5" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="367.9" y="190.0">java/io/Buffe..</text>
+</g>
+<g>
+<title>java.lang.String (5 samples, 3.76%)</title><rect x="364.9" y="163.0" width="44.3" height="15" fill="#55c3c3" rx="2" ry="2"/>
+<text x="367.9" y="174.0">java..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (7 samples, 5.26%)</title><rect x="409.2" y="163.0" width="62.2" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="412.2" y="174.0">java/l..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (7 samples, 5.26%)</title><rect x="409.2" y="147.0" width="62.2" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="412.2" y="158.0">java/l..</text>
+</g>
+<g>
+<title>java/lang/StringUTF16.compress (7 samples, 5.26%)</title><rect x="409.2" y="131.0" width="62.2" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="412.2" y="142.0">java/l..</text>
+</g>
+<g>
+<title>byte[] (7 samples, 5.26%)</title><rect x="409.2" y="115.0" width="62.2" height="15" fill="#50bebe" rx="2" ry="2"/>
+<text x="412.2" y="126.0">byte[]</text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/ProcessThreadMetrics$$Lambda$155/872826668.applyAsDouble (1 samples, 0.75%)</title><rect x="471.4" y="323.0" width="8.8" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="474.4" y="334.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/ProcessThreadMetrics.lambda$bindTo$0 (1 samples, 0.75%)</title><rect x="471.4" y="307.0" width="8.8" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="474.4" y="318.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/ProcessThreadMetrics.value (1 samples, 0.75%)</title><rect x="471.4" y="291.0" width="8.8" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="474.4" y="302.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsStatus.get (1 samples, 0.75%)</title><rect x="471.4" y="275.0" width="8.8" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="474.4" y="286.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsEntry.get (1 samples, 0.75%)</title><rect x="471.4" y="259.0" width="8.8" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="474.4" y="270.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsEntry.collect (1 samples, 0.75%)</title><rect x="471.4" y="243.0" width="8.8" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="474.4" y="254.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsReader.read (1 samples, 0.75%)</title><rect x="471.4" y="227.0" width="8.8" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="474.4" y="238.0"></text>
+</g>
+<g>
+<title>io/github/mweirauch/micrometer/jvm/extras/procfs/ProcfsReader.readPath (1 samples, 0.75%)</title><rect x="471.4" y="211.0" width="8.8" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="474.4" y="222.0"></text>
+</g>
+<g>
+<title>java/nio/file/Files.newBufferedReader (1 samples, 0.75%)</title><rect x="471.4" y="195.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="474.4" y="206.0"></text>
+</g>
+<g>
+<title>java/nio/file/Files.newBufferedReader (1 samples, 0.75%)</title><rect x="471.4" y="179.0" width="8.8" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="474.4" y="190.0"></text>
+</g>
+<g>
+<title>java/io/BufferedReader.&lt;init&gt; (1 samples, 0.75%)</title><rect x="471.4" y="163.0" width="8.8" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="474.4" y="174.0"></text>
+</g>
+<g>
+<title>java/io/BufferedReader.&lt;init&gt; (1 samples, 0.75%)</title><rect x="471.4" y="147.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="474.4" y="158.0"></text>
+</g>
+<g>
+<title>char[] (1 samples, 0.75%)</title><rect x="471.4" y="131.0" width="8.8" height="15" fill="#55c3c3" rx="2" ry="2"/>
+<text x="474.4" y="142.0"></text>
+</g>
+<g>
+<title>io/micrometer/core/instrument/binder/jvm/JvmThreadMetrics$$Lambda$140/1472216456.applyAsDouble (3 samples, 2.26%)</title><rect x="480.2" y="323.0" width="26.6" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="483.2" y="334.0">i..</text>
+</g>
+<g>
+<title>io/micrometer/core/instrument/binder/jvm/JvmThreadMetrics.lambda$bindTo$0 (3 samples, 2.26%)</title><rect x="480.2" y="307.0" width="26.6" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="483.2" y="318.0">i..</text>
+</g>
+<g>
+<title>io/micrometer/core/instrument/binder/jvm/JvmThreadMetrics.getThreadStateCount (3 samples, 2.26%)</title><rect x="480.2" y="291.0" width="26.6" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="483.2" y="302.0">i..</text>
+</g>
+<g>
+<title>sun/management/ThreadImpl.getThreadInfo (3 samples, 2.26%)</title><rect x="480.2" y="275.0" width="26.6" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="483.2" y="286.0">s..</text>
+</g>
+<g>
+<title>sun/management/ThreadImpl.getThreadInfo (3 samples, 2.26%)</title><rect x="480.2" y="259.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="483.2" y="270.0">s..</text>
+</g>
+<g>
+<title>sun/management/ThreadImpl.getThreadInfo1 (3 samples, 2.26%)</title><rect x="480.2" y="243.0" width="26.6" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="483.2" y="254.0">s..</text>
+</g>
+<g>
+<title>java.lang.management.ThreadInfo (2 samples, 1.50%)</title><rect x="480.2" y="227.0" width="17.8" height="15" fill="#5bc9c9" rx="2" ry="2"/>
+<text x="483.2" y="238.0"></text>
+</g>
+<g>
+<title>java/lang/management/ThreadInfo.&lt;init&gt; (1 samples, 0.75%)</title><rect x="498.0" y="227.0" width="8.8" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="501.0" y="238.0"></text>
+</g>
+<g>
+<title>java/lang/management/ThreadInfo.initialize (1 samples, 0.75%)</title><rect x="498.0" y="211.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="501.0" y="222.0"></text>
+</g>
+<g>
+<title>java/lang/invoke/Invokers$Holder.linkToTargetMethod (1 samples, 0.75%)</title><rect x="498.0" y="195.0" width="8.8" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="501.0" y="206.0"></text>
+</g>
+<g>
+<title>java/lang/invoke/DelegatingMethodHandle$Holder.reinvoke_L (1 samples, 0.75%)</title><rect x="498.0" y="179.0" width="8.8" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="501.0" y="190.0"></text>
+</g>
+<g>
+<title>java/lang/invoke/LambdaForm$MH/473524237.invoke (1 samples, 0.75%)</title><rect x="498.0" y="163.0" width="8.8" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="501.0" y="174.0"></text>
+</g>
+<g>
+<title>java/lang/invoke/DirectMethodHandle$Holder.invokeStatic (1 samples, 0.75%)</title><rect x="498.0" y="147.0" width="8.8" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="501.0" y="158.0"></text>
+</g>
+<g>
+<title>java/lang/StringConcatHelper.newString (1 samples, 0.75%)</title><rect x="498.0" y="131.0" width="8.8" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="501.0" y="142.0"></text>
+</g>
+<g>
+<title>java.lang.String (1 samples, 0.75%)</title><rect x="498.0" y="115.0" width="8.8" height="15" fill="#60cece" rx="2" ry="2"/>
+<text x="501.0" y="126.0"></text>
+</g>
+<g>
+<title>java.util.HashMap (1 samples, 0.75%)</title><rect x="506.8" y="371.0" width="8.9" height="15" fill="#6cdada" rx="2" ry="2"/>
+<text x="509.8" y="382.0"></text>
+</g>
+<g>
+<title>java/util/stream/ReferencePipeline.collect (1 samples, 0.75%)</title><rect x="515.7" y="371.0" width="8.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="518.7" y="382.0"></text>
+</g>
+<g>
+<title>java/util/stream/AbstractPipeline.evaluate (1 samples, 0.75%)</title><rect x="515.7" y="355.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="518.7" y="366.0"></text>
+</g>
+<g>
+<title>java/util/stream/ReduceOps$ReduceOp.evaluateSequential (1 samples, 0.75%)</title><rect x="515.7" y="339.0" width="8.9" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="518.7" y="350.0"></text>
+</g>
+<g>
+<title>java/util/stream/AbstractPipeline.wrapAndCopyInto (1 samples, 0.75%)</title><rect x="515.7" y="323.0" width="8.9" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="518.7" y="334.0"></text>
+</g>
+<g>
+<title>java/util/stream/AbstractPipeline.copyInto (1 samples, 0.75%)</title><rect x="515.7" y="307.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="518.7" y="318.0"></text>
+</g>
+<g>
+<title>java/util/HashMap$ValueSpliterator.forEachRemaining (1 samples, 0.75%)</title><rect x="515.7" y="291.0" width="8.9" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="518.7" y="302.0"></text>
+</g>
+<g>
+<title>java/util/stream/ReferencePipeline$3$1.accept (1 samples, 0.75%)</title><rect x="515.7" y="275.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="518.7" y="286.0"></text>
+</g>
+<g>
+<title>java/util/stream/ReduceOps$3ReducingSink.accept (1 samples, 0.75%)</title><rect x="515.7" y="259.0" width="8.9" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="518.7" y="270.0"></text>
+</g>
+<g>
+<title>java/util/stream/Collectors$$Lambda$89/302977067.accept (1 samples, 0.75%)</title><rect x="515.7" y="243.0" width="8.9" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="518.7" y="254.0"></text>
+</g>
+<g>
+<title>java/util/ArrayList.add (1 samples, 0.75%)</title><rect x="515.7" y="227.0" width="8.9" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="518.7" y="238.0"></text>
+</g>
+<g>
+<title>java/util/ArrayList.add (1 samples, 0.75%)</title><rect x="515.7" y="211.0" width="8.9" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="518.7" y="222.0"></text>
+</g>
+<g>
+<title>java/util/ArrayList.grow (1 samples, 0.75%)</title><rect x="515.7" y="195.0" width="8.9" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="518.7" y="206.0"></text>
+</g>
+<g>
+<title>java/util/ArrayList.grow (1 samples, 0.75%)</title><rect x="515.7" y="179.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="518.7" y="190.0"></text>
+</g>
+<g>
+<title>java/util/Arrays.copyOf (1 samples, 0.75%)</title><rect x="515.7" y="163.0" width="8.9" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="518.7" y="174.0"></text>
+</g>
+<g>
+<title>java.lang.Object[] (1 samples, 0.75%)</title><rect x="515.7" y="147.0" width="8.9" height="15" fill="#67d5d5" rx="2" ry="2"/>
+<text x="518.7" y="158.0"></text>
+</g>
+<g>
+<title>java/io/StringWriter.toString (2 samples, 1.50%)</title><rect x="524.6" y="467.0" width="17.7" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="527.6" y="478.0"></text>
+</g>
+<g>
+<title>java/lang/StringBuffer.toString (2 samples, 1.50%)</title><rect x="524.6" y="451.0" width="17.7" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="527.6" y="462.0"></text>
+</g>
+<g>
+<title>java/lang/StringLatin1.newString (2 samples, 1.50%)</title><rect x="524.6" y="435.0" width="17.7" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="527.6" y="446.0"></text>
+</g>
+<g>
+<title>java/util/Arrays.copyOfRange (2 samples, 1.50%)</title><rect x="524.6" y="419.0" width="17.7" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="527.6" y="430.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="524.6" y="403.0" width="8.9" height="15" fill="#55c3c3" rx="2" ry="2"/>
+<text x="527.6" y="414.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="533.5" y="403.0" width="8.8" height="15" fill="#f89400" rx="2" ry="2"/>
+<text x="536.5" y="414.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (3 samples, 2.26%)</title><rect x="542.3" y="483.0" width="26.6" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="545.3" y="494.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (3 samples, 2.26%)</title><rect x="542.3" y="467.0" width="26.6" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="545.3" y="478.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (3 samples, 2.26%)</title><rect x="542.3" y="451.0" width="26.6" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="545.3" y="462.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (3 samples, 2.26%)</title><rect x="542.3" y="435.0" width="26.6" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="545.3" y="446.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (3 samples, 2.26%)</title><rect x="542.3" y="419.0" width="26.6" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="545.3" y="430.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (3 samples, 2.26%)</title><rect x="542.3" y="403.0" width="26.6" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="545.3" y="414.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="542.3" y="387.0" width="26.6" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="545.3" y="398.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="542.3" y="371.0" width="26.6" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="545.3" y="382.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="542.3" y="355.0" width="26.6" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="545.3" y="366.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (3 samples, 2.26%)</title><rect x="542.3" y="339.0" width="26.6" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="545.3" y="350.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (3 samples, 2.26%)</title><rect x="542.3" y="323.0" width="26.6" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="545.3" y="334.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (3 samples, 2.26%)</title><rect x="542.3" y="307.0" width="26.6" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="545.3" y="318.0">i..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="542.3" y="291.0" width="26.6" height="15" fill="#f08c00" rx="2" ry="2"/>
+<text x="545.3" y="302.0">b..</text>
+</g>
+<g>
+<title>[epollEventLoopGroup-3-2 tid=18457] (2 samples, 1.50%)</title><rect x="568.9" y="963.0" width="17.8" height="15" fill="#f97b7b" rx="2" ry="2"/>
+<text x="571.9" y="974.0"></text>
+</g>
+<g>
+<title>java/lang/Thread.run (2 samples, 1.50%)</title><rect x="568.9" y="947.0" width="17.8" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="571.9" y="958.0"></text>
+</g>
+<g>
+<title>io/netty/util/concurrent/FastThreadLocalRunnable.run (2 samples, 1.50%)</title><rect x="568.9" y="931.0" width="17.8" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="571.9" y="942.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/ThreadExecutorMap$2.run (2 samples, 1.50%)</title><rect x="568.9" y="915.0" width="17.8" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="571.9" y="926.0"></text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor$5.run (2 samples, 1.50%)</title><rect x="568.9" y="899.0" width="17.8" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="571.9" y="910.0"></text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.run (2 samples, 1.50%)</title><rect x="568.9" y="883.0" width="17.8" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="571.9" y="894.0"></text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor.runAllTasks (2 samples, 1.50%)</title><rect x="568.9" y="867.0" width="17.8" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="571.9" y="878.0"></text>
+</g>
+<g>
+<title>io/netty/util/concurrent/AbstractEventExecutor.safeExecute (2 samples, 1.50%)</title><rect x="568.9" y="851.0" width="17.8" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="571.9" y="862.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext$AbstractWriteTask.run (2 samples, 1.50%)</title><rect x="568.9" y="835.0" width="17.8" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="571.9" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext$AbstractWriteTask.write (2 samples, 1.50%)</title><rect x="568.9" y="819.0" width="17.8" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="571.9" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.access$1700 (2 samples, 1.50%)</title><rect x="568.9" y="803.0" width="17.8" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="571.9" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeWrite (2 samples, 1.50%)</title><rect x="568.9" y="787.0" width="17.8" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="571.9" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeWrite0 (2 samples, 1.50%)</title><rect x="568.9" y="771.0" width="17.8" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="571.9" y="782.0"></text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/netty/SlowConsumerDisconnectHandler.write (2 samples, 1.50%)</title><rect x="568.9" y="755.0" width="17.8" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="571.9" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.writeAndFlush (2 samples, 1.50%)</title><rect x="568.9" y="739.0" width="17.8" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="571.9" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.newPromise (1 samples, 0.75%)</title><rect x="568.9" y="723.0" width="8.9" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="571.9" y="734.0"></text>
+</g>
+<g>
+<title>io.netty.channel.DefaultChannelPromise (1 samples, 0.75%)</title><rect x="568.9" y="707.0" width="8.9" height="15" fill="#61cfcf" rx="2" ry="2"/>
+<text x="571.9" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.writeAndFlush (1 samples, 0.75%)</title><rect x="577.8" y="723.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="580.8" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.write (1 samples, 0.75%)</title><rect x="577.8" y="707.0" width="8.9" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="580.8" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeWriteAndFlush (1 samples, 0.75%)</title><rect x="577.8" y="691.0" width="8.9" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="580.8" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeWrite0 (1 samples, 0.75%)</title><rect x="577.8" y="675.0" width="8.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="580.8" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/handler/stream/ChunkedWriteHandler.write (1 samples, 0.75%)</title><rect x="577.8" y="659.0" width="8.9" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="580.8" y="670.0"></text>
+</g>
+<g>
+<title>io.netty.handler.stream.ChunkedWriteHandler$PendingWrite (1 samples, 0.75%)</title><rect x="577.8" y="643.0" width="8.9" height="15" fill="#51bfbf" rx="2" ry="2"/>
+<text x="580.8" y="654.0"></text>
+</g>
+<g>
+<title>[epollEventLoopGroup-3-3 tid=18515] (2 samples, 1.50%)</title><rect x="586.7" y="963.0" width="17.7" height="15" fill="#e35c5c" rx="2" ry="2"/>
+<text x="589.7" y="974.0"></text>
+</g>
+<g>
+<title>java/lang/Thread.run (2 samples, 1.50%)</title><rect x="586.7" y="947.0" width="17.7" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="589.7" y="958.0"></text>
+</g>
+<g>
+<title>io/netty/util/concurrent/FastThreadLocalRunnable.run (2 samples, 1.50%)</title><rect x="586.7" y="931.0" width="17.7" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="589.7" y="942.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/ThreadExecutorMap$2.run (2 samples, 1.50%)</title><rect x="586.7" y="915.0" width="17.7" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="589.7" y="926.0"></text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor$5.run (2 samples, 1.50%)</title><rect x="586.7" y="899.0" width="17.7" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="589.7" y="910.0"></text>
+</g>
+<g>
+<title>io/netty/channel/epoll/EpollEventLoop.run (2 samples, 1.50%)</title><rect x="586.7" y="883.0" width="17.7" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="589.7" y="894.0"></text>
+</g>
+<g>
+<title>io/netty/util/concurrent/SingleThreadEventExecutor.runAllTasks (2 samples, 1.50%)</title><rect x="586.7" y="867.0" width="17.7" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="589.7" y="878.0"></text>
+</g>
+<g>
+<title>io/netty/util/concurrent/AbstractEventExecutor.safeExecute (2 samples, 1.50%)</title><rect x="586.7" y="851.0" width="17.7" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="589.7" y="862.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext$AbstractWriteTask.run (2 samples, 1.50%)</title><rect x="586.7" y="835.0" width="17.7" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="589.7" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext$AbstractWriteTask.write (2 samples, 1.50%)</title><rect x="586.7" y="819.0" width="17.7" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="589.7" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.access$1700 (2 samples, 1.50%)</title><rect x="586.7" y="803.0" width="17.7" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="589.7" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeWrite (2 samples, 1.50%)</title><rect x="586.7" y="787.0" width="17.7" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="589.7" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeWrite0 (2 samples, 1.50%)</title><rect x="586.7" y="771.0" width="17.7" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="589.7" y="782.0"></text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/netty/SlowConsumerDisconnectHandler.write (2 samples, 1.50%)</title><rect x="586.7" y="755.0" width="17.7" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="589.7" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.writeAndFlush (2 samples, 1.50%)</title><rect x="586.7" y="739.0" width="17.7" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="589.7" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.newPromise (1 samples, 0.75%)</title><rect x="586.7" y="723.0" width="8.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="589.7" y="734.0"></text>
+</g>
+<g>
+<title>io.netty.channel.DefaultChannelPromise (1 samples, 0.75%)</title><rect x="586.7" y="707.0" width="8.9" height="15" fill="#60cece" rx="2" ry="2"/>
+<text x="589.7" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.writeAndFlush (1 samples, 0.75%)</title><rect x="595.6" y="723.0" width="8.8" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="598.6" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.write (1 samples, 0.75%)</title><rect x="595.6" y="707.0" width="8.8" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="598.6" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeWriteAndFlush (1 samples, 0.75%)</title><rect x="595.6" y="691.0" width="8.8" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="598.6" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.invokeWrite0 (1 samples, 0.75%)</title><rect x="595.6" y="675.0" width="8.8" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="598.6" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/handler/stream/ChunkedWriteHandler.write (1 samples, 0.75%)</title><rect x="595.6" y="659.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="598.6" y="670.0"></text>
+</g>
+<g>
+<title>io.netty.handler.stream.ChunkedWriteHandler$PendingWrite (1 samples, 0.75%)</title><rect x="595.6" y="643.0" width="8.8" height="15" fill="#6ddbdb" rx="2" ry="2"/>
+<text x="598.6" y="654.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-10 tid=18418] (4 samples, 3.01%)</title><rect x="604.4" y="963.0" width="35.5" height="15" fill="#e66161" rx="2" ry="2"/>
+<text x="607.4" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="604.4" y="947.0" width="35.5" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="607.4" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="604.4" y="931.0" width="35.5" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="607.4" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="604.4" y="915.0" width="35.5" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="607.4" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="604.4" y="899.0" width="35.5" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="607.4" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="604.4" y="883.0" width="35.5" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="607.4" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="604.4" y="867.0" width="35.5" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="607.4" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="604.4" y="851.0" width="35.5" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="607.4" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="604.4" y="835.0" width="8.9" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="607.4" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="604.4" y="819.0" width="8.9" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="607.4" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="604.4" y="803.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="607.4" y="814.0"></text>
+</g>
+<g>
+<title>java/util/concurrent/ConcurrentHashMap$ValuesView.iterator (1 samples, 0.75%)</title><rect x="604.4" y="787.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="607.4" y="798.0"></text>
+</g>
+<g>
+<title>java.util.concurrent.ConcurrentHashMap$ValueIterator (1 samples, 0.75%)</title><rect x="604.4" y="771.0" width="8.9" height="15" fill="#62d0d0" rx="2" ry="2"/>
+<text x="607.4" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (1 samples, 0.75%)</title><rect x="613.3" y="835.0" width="8.9" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="616.3" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (1 samples, 0.75%)</title><rect x="613.3" y="819.0" width="8.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="616.3" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="613.3" y="803.0" width="8.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="616.3" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="613.3" y="787.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="616.3" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (1 samples, 0.75%)</title><rect x="613.3" y="771.0" width="8.9" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="616.3" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="613.3" y="755.0" width="8.9" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="616.3" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="613.3" y="739.0" width="8.9" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="616.3" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (1 samples, 0.75%)</title><rect x="613.3" y="723.0" width="8.9" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="616.3" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="613.3" y="707.0" width="8.9" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="616.3" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="613.3" y="691.0" width="8.9" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="616.3" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="613.3" y="675.0" width="8.9" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="616.3" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="613.3" y="659.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="616.3" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="613.3" y="643.0" width="8.9" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="616.3" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (1 samples, 0.75%)</title><rect x="613.3" y="627.0" width="8.9" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="616.3" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="613.3" y="611.0" width="8.9" height="15" fill="#61cfcf" rx="2" ry="2"/>
+<text x="616.3" y="622.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (2 samples, 1.50%)</title><rect x="622.2" y="835.0" width="17.7" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="625.2" y="846.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (2 samples, 1.50%)</title><rect x="622.2" y="819.0" width="17.7" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="625.2" y="830.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (2 samples, 1.50%)</title><rect x="622.2" y="803.0" width="17.7" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="625.2" y="814.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (2 samples, 1.50%)</title><rect x="622.2" y="787.0" width="17.7" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="625.2" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (2 samples, 1.50%)</title><rect x="622.2" y="771.0" width="17.7" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="625.2" y="782.0"></text>
+</g>
+<g>
+<title>byte[] (2 samples, 1.50%)</title><rect x="622.2" y="755.0" width="17.7" height="15" fill="#5ac8c8" rx="2" ry="2"/>
+<text x="625.2" y="766.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-11 tid=18419] (4 samples, 3.01%)</title><rect x="639.9" y="963.0" width="35.5" height="15" fill="#e15a5a" rx="2" ry="2"/>
+<text x="642.9" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="639.9" y="947.0" width="35.5" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="642.9" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="639.9" y="931.0" width="35.5" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="642.9" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="639.9" y="915.0" width="35.5" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="642.9" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="639.9" y="899.0" width="35.5" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="642.9" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="639.9" y="883.0" width="35.5" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="642.9" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="639.9" y="867.0" width="35.5" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="642.9" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="639.9" y="851.0" width="35.5" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="642.9" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (1 samples, 0.75%)</title><rect x="639.9" y="835.0" width="8.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="642.9" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (1 samples, 0.75%)</title><rect x="639.9" y="819.0" width="8.9" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="642.9" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="639.9" y="803.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="642.9" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="639.9" y="787.0" width="8.9" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="642.9" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (1 samples, 0.75%)</title><rect x="639.9" y="771.0" width="8.9" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="642.9" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="639.9" y="755.0" width="8.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="642.9" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="639.9" y="739.0" width="8.9" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="642.9" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (1 samples, 0.75%)</title><rect x="639.9" y="723.0" width="8.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="642.9" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="639.9" y="707.0" width="8.9" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="642.9" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="639.9" y="691.0" width="8.9" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="642.9" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="639.9" y="675.0" width="8.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="642.9" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="639.9" y="659.0" width="8.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="642.9" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="639.9" y="643.0" width="8.9" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="642.9" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (1 samples, 0.75%)</title><rect x="639.9" y="627.0" width="8.9" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="642.9" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="639.9" y="611.0" width="8.9" height="15" fill="#69d7d7" rx="2" ry="2"/>
+<text x="642.9" y="622.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (3 samples, 2.26%)</title><rect x="648.8" y="835.0" width="26.6" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="651.8" y="846.0">j..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (3 samples, 2.26%)</title><rect x="648.8" y="819.0" width="26.6" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="651.8" y="830.0">j..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (3 samples, 2.26%)</title><rect x="648.8" y="803.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="651.8" y="814.0">j..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (3 samples, 2.26%)</title><rect x="648.8" y="787.0" width="26.6" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="651.8" y="798.0">j..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (3 samples, 2.26%)</title><rect x="648.8" y="771.0" width="26.6" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="651.8" y="782.0">j..</text>
+</g>
+<g>
+<title>java/util/Arrays.copyOf (3 samples, 2.26%)</title><rect x="648.8" y="755.0" width="26.6" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="651.8" y="766.0">j..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="648.8" y="739.0" width="26.6" height="15" fill="#56c4c4" rx="2" ry="2"/>
+<text x="651.8" y="750.0">b..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-12 tid=18420] (5 samples, 3.76%)</title><rect x="675.4" y="963.0" width="44.4" height="15" fill="#f37373" rx="2" ry="2"/>
+<text x="678.4" y="974.0">[rab..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (5 samples, 3.76%)</title><rect x="675.4" y="947.0" width="44.4" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="678.4" y="958.0">java..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (5 samples, 3.76%)</title><rect x="675.4" y="931.0" width="44.4" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="678.4" y="942.0">java..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (5 samples, 3.76%)</title><rect x="675.4" y="915.0" width="44.4" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="678.4" y="926.0">java..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (5 samples, 3.76%)</title><rect x="675.4" y="899.0" width="44.4" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="678.4" y="910.0">com/..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="675.4" y="883.0" width="35.5" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="678.4" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="675.4" y="867.0" width="35.5" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="678.4" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="675.4" y="851.0" width="35.5" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="678.4" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="675.4" y="835.0" width="8.9" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="678.4" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="675.4" y="819.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="678.4" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="675.4" y="803.0" width="8.9" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="678.4" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroupFuture.&lt;init&gt; (1 samples, 0.75%)</title><rect x="675.4" y="787.0" width="8.9" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="678.4" y="798.0"></text>
+</g>
+<g>
+<title>java/util/Collections$UnmodifiableCollection.iterator (1 samples, 0.75%)</title><rect x="675.4" y="771.0" width="8.9" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="678.4" y="782.0"></text>
+</g>
+<g>
+<title>java.util.Collections$UnmodifiableCollection$1 (1 samples, 0.75%)</title><rect x="675.4" y="755.0" width="8.9" height="15" fill="#52c0c0" rx="2" ry="2"/>
+<text x="678.4" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (1 samples, 0.75%)</title><rect x="684.3" y="835.0" width="8.9" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="687.3" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (1 samples, 0.75%)</title><rect x="684.3" y="819.0" width="8.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="687.3" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="684.3" y="803.0" width="8.9" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="687.3" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="684.3" y="787.0" width="8.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="687.3" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (1 samples, 0.75%)</title><rect x="684.3" y="771.0" width="8.9" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="687.3" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="684.3" y="755.0" width="8.9" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="687.3" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="684.3" y="739.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="687.3" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (1 samples, 0.75%)</title><rect x="684.3" y="723.0" width="8.9" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="687.3" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="684.3" y="707.0" width="8.9" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="687.3" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="684.3" y="691.0" width="8.9" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="687.3" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="684.3" y="675.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="687.3" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="684.3" y="659.0" width="8.9" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="687.3" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="684.3" y="643.0" width="8.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="687.3" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (1 samples, 0.75%)</title><rect x="684.3" y="627.0" width="8.9" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="687.3" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="684.3" y="611.0" width="8.9" height="15" fill="#51bfbf" rx="2" ry="2"/>
+<text x="687.3" y="622.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (2 samples, 1.50%)</title><rect x="693.2" y="835.0" width="17.7" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="696.2" y="846.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (2 samples, 1.50%)</title><rect x="693.2" y="819.0" width="17.7" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="696.2" y="830.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (2 samples, 1.50%)</title><rect x="693.2" y="803.0" width="17.7" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="696.2" y="814.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (2 samples, 1.50%)</title><rect x="693.2" y="787.0" width="17.7" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="696.2" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (2 samples, 1.50%)</title><rect x="693.2" y="771.0" width="17.7" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="696.2" y="782.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="693.2" y="755.0" width="8.8" height="15" fill="#6ad8d8" rx="2" ry="2"/>
+<text x="696.2" y="766.0"></text>
+</g>
+<g>
+<title>java/util/Arrays.copyOf (1 samples, 0.75%)</title><rect x="702.0" y="755.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="705.0" y="766.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="702.0" y="739.0" width="8.9" height="15" fill="#5ac8c8" rx="2" ry="2"/>
+<text x="705.0" y="750.0"></text>
+</g>
+<g>
+<title>java/util/ArrayList.&lt;init&gt; (1 samples, 0.75%)</title><rect x="710.9" y="883.0" width="8.9" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="713.9" y="894.0"></text>
+</g>
+<g>
+<title>java.lang.Object[] (1 samples, 0.75%)</title><rect x="710.9" y="867.0" width="8.9" height="15" fill="#67d5d5" rx="2" ry="2"/>
+<text x="713.9" y="878.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-13 tid=18421] (4 samples, 3.01%)</title><rect x="719.8" y="963.0" width="35.5" height="15" fill="#f97a7a" rx="2" ry="2"/>
+<text x="722.8" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="719.8" y="947.0" width="35.5" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="722.8" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="719.8" y="931.0" width="35.5" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="722.8" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="719.8" y="915.0" width="35.5" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="722.8" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="719.8" y="899.0" width="35.5" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="722.8" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="719.8" y="883.0" width="35.5" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="722.8" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="719.8" y="867.0" width="35.5" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="722.8" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="719.8" y="851.0" width="35.5" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="722.8" y="862.0">pbo..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (4 samples, 3.01%)</title><rect x="719.8" y="835.0" width="35.5" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="722.8" y="846.0">jav..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (4 samples, 3.01%)</title><rect x="719.8" y="819.0" width="35.5" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="722.8" y="830.0">jav..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (4 samples, 3.01%)</title><rect x="719.8" y="803.0" width="35.5" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="722.8" y="814.0">jav..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (4 samples, 3.01%)</title><rect x="719.8" y="787.0" width="35.5" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="722.8" y="798.0">jav..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (4 samples, 3.01%)</title><rect x="719.8" y="771.0" width="35.5" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="722.8" y="782.0">jav..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="719.8" y="755.0" width="26.6" height="15" fill="#57c5c5" rx="2" ry="2"/>
+<text x="722.8" y="766.0">b..</text>
+</g>
+<g>
+<title>java/util/Arrays.copyOf (1 samples, 0.75%)</title><rect x="746.4" y="755.0" width="8.9" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="749.4" y="766.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="746.4" y="739.0" width="8.9" height="15" fill="#61cfcf" rx="2" ry="2"/>
+<text x="749.4" y="750.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-14 tid=18422] (3 samples, 2.26%)</title><rect x="755.3" y="963.0" width="26.6" height="15" fill="#e25c5c" rx="2" ry="2"/>
+<text x="758.3" y="974.0">[..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (3 samples, 2.26%)</title><rect x="755.3" y="947.0" width="26.6" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="758.3" y="958.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (3 samples, 2.26%)</title><rect x="755.3" y="931.0" width="26.6" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="758.3" y="942.0">j..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (3 samples, 2.26%)</title><rect x="755.3" y="915.0" width="26.6" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="758.3" y="926.0">j..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (3 samples, 2.26%)</title><rect x="755.3" y="899.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="758.3" y="910.0">c..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (3 samples, 2.26%)</title><rect x="755.3" y="883.0" width="26.6" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="758.3" y="894.0">c..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (3 samples, 2.26%)</title><rect x="755.3" y="867.0" width="26.6" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="758.3" y="878.0">p..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (3 samples, 2.26%)</title><rect x="755.3" y="851.0" width="26.6" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="758.3" y="862.0">p..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (3 samples, 2.26%)</title><rect x="755.3" y="835.0" width="26.6" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="758.3" y="846.0">i..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (3 samples, 2.26%)</title><rect x="755.3" y="819.0" width="26.6" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="758.3" y="830.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (3 samples, 2.26%)</title><rect x="755.3" y="803.0" width="26.6" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="758.3" y="814.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (3 samples, 2.26%)</title><rect x="755.3" y="787.0" width="26.6" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="758.3" y="798.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (3 samples, 2.26%)</title><rect x="755.3" y="771.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="758.3" y="782.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (3 samples, 2.26%)</title><rect x="755.3" y="755.0" width="26.6" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="758.3" y="766.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (3 samples, 2.26%)</title><rect x="755.3" y="739.0" width="26.6" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="758.3" y="750.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (3 samples, 2.26%)</title><rect x="755.3" y="723.0" width="26.6" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="758.3" y="734.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="755.3" y="707.0" width="26.6" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="758.3" y="718.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="755.3" y="691.0" width="26.6" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="758.3" y="702.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="755.3" y="675.0" width="26.6" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="758.3" y="686.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (3 samples, 2.26%)</title><rect x="755.3" y="659.0" width="26.6" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="758.3" y="670.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (3 samples, 2.26%)</title><rect x="755.3" y="643.0" width="26.6" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="758.3" y="654.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (3 samples, 2.26%)</title><rect x="755.3" y="627.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="758.3" y="638.0">i..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="755.3" y="611.0" width="26.6" height="15" fill="#5ac8c8" rx="2" ry="2"/>
+<text x="758.3" y="622.0">b..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-15 tid=18423] (4 samples, 3.01%)</title><rect x="781.9" y="963.0" width="35.5" height="15" fill="#e76262" rx="2" ry="2"/>
+<text x="784.9" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="781.9" y="947.0" width="35.5" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="784.9" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="781.9" y="931.0" width="35.5" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="784.9" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="781.9" y="915.0" width="35.5" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="784.9" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="781.9" y="899.0" width="35.5" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="784.9" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="781.9" y="883.0" width="35.5" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="784.9" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="781.9" y="867.0" width="35.5" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="784.9" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="781.9" y="851.0" width="35.5" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="784.9" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="781.9" y="835.0" width="17.7" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="784.9" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="781.9" y="819.0" width="17.7" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="784.9" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="781.9" y="803.0" width="17.7" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="784.9" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.safeDuplicate (1 samples, 0.75%)</title><rect x="781.9" y="787.0" width="8.9" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="784.9" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="781.9" y="771.0" width="8.9" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="784.9" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="781.9" y="755.0" width="8.9" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="784.9" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/WebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="781.9" y="739.0" width="8.9" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="784.9" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/DefaultByteBufHolder.retainedDuplicate (1 samples, 0.75%)</title><rect x="781.9" y="723.0" width="8.9" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="784.9" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBuf.retainedDuplicate (1 samples, 0.75%)</title><rect x="781.9" y="707.0" width="8.9" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="784.9" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBuf.duplicate (1 samples, 0.75%)</title><rect x="781.9" y="691.0" width="8.9" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="784.9" y="702.0"></text>
+</g>
+<g>
+<title>io.netty.buffer.UnpooledDuplicatedByteBuf (1 samples, 0.75%)</title><rect x="781.9" y="675.0" width="8.9" height="15" fill="#59c7c7" rx="2" ry="2"/>
+<text x="784.9" y="686.0"></text>
+</g>
+<g>
+<title>java/util/HashMap.put (1 samples, 0.75%)</title><rect x="790.8" y="787.0" width="8.8" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="793.8" y="798.0"></text>
+</g>
+<g>
+<title>java/util/HashMap.putVal (1 samples, 0.75%)</title><rect x="790.8" y="771.0" width="8.8" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="793.8" y="782.0"></text>
+</g>
+<g>
+<title>java/util/LinkedHashMap.newNode (1 samples, 0.75%)</title><rect x="790.8" y="755.0" width="8.8" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="793.8" y="766.0"></text>
+</g>
+<g>
+<title>java.util.LinkedHashMap$Entry (1 samples, 0.75%)</title><rect x="790.8" y="739.0" width="8.8" height="15" fill="#57c5c5" rx="2" ry="2"/>
+<text x="793.8" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (1 samples, 0.75%)</title><rect x="799.6" y="835.0" width="8.9" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="802.6" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (1 samples, 0.75%)</title><rect x="799.6" y="819.0" width="8.9" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="802.6" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="799.6" y="803.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="802.6" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="799.6" y="787.0" width="8.9" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="802.6" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (1 samples, 0.75%)</title><rect x="799.6" y="771.0" width="8.9" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="802.6" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="799.6" y="755.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="802.6" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="799.6" y="739.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="802.6" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (1 samples, 0.75%)</title><rect x="799.6" y="723.0" width="8.9" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="802.6" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="799.6" y="707.0" width="8.9" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="802.6" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="799.6" y="691.0" width="8.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="802.6" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="799.6" y="675.0" width="8.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="802.6" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="799.6" y="659.0" width="8.9" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="802.6" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="799.6" y="643.0" width="8.9" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="802.6" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (1 samples, 0.75%)</title><rect x="799.6" y="627.0" width="8.9" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="802.6" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="799.6" y="611.0" width="8.9" height="15" fill="#5ecccc" rx="2" ry="2"/>
+<text x="802.6" y="622.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="808.5" y="835.0" width="8.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="811.5" y="846.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="808.5" y="819.0" width="8.9" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="811.5" y="830.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (1 samples, 0.75%)</title><rect x="808.5" y="803.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="811.5" y="814.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (1 samples, 0.75%)</title><rect x="808.5" y="787.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="811.5" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (1 samples, 0.75%)</title><rect x="808.5" y="771.0" width="8.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="811.5" y="782.0"></text>
+</g>
+<g>
+<title>java/util/Arrays.copyOf (1 samples, 0.75%)</title><rect x="808.5" y="755.0" width="8.9" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="811.5" y="766.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="808.5" y="739.0" width="8.9" height="15" fill="#55c3c3" rx="2" ry="2"/>
+<text x="811.5" y="750.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-16 tid=18424] (4 samples, 3.01%)</title><rect x="817.4" y="963.0" width="35.5" height="15" fill="#ef6d6d" rx="2" ry="2"/>
+<text x="820.4" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="817.4" y="947.0" width="35.5" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="820.4" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="817.4" y="931.0" width="35.5" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="820.4" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="817.4" y="915.0" width="35.5" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="820.4" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="817.4" y="899.0" width="35.5" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="820.4" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="817.4" y="883.0" width="35.5" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="820.4" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="817.4" y="867.0" width="35.5" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="820.4" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="817.4" y="851.0" width="35.5" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="820.4" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="817.4" y="835.0" width="8.8" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="820.4" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="817.4" y="819.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="820.4" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="817.4" y="803.0" width="8.8" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="820.4" y="814.0"></text>
+</g>
+<g>
+<title>io.netty.channel.group.DefaultChannelGroupFuture (1 samples, 0.75%)</title><rect x="817.4" y="787.0" width="8.8" height="15" fill="#5ecccc" rx="2" ry="2"/>
+<text x="820.4" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (3 samples, 2.26%)</title><rect x="826.2" y="835.0" width="26.7" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="829.2" y="846.0">j..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (3 samples, 2.26%)</title><rect x="826.2" y="819.0" width="26.7" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="829.2" y="830.0">j..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (3 samples, 2.26%)</title><rect x="826.2" y="803.0" width="26.7" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="829.2" y="814.0">j..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (3 samples, 2.26%)</title><rect x="826.2" y="787.0" width="26.7" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="829.2" y="798.0">j..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (3 samples, 2.26%)</title><rect x="826.2" y="771.0" width="26.7" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="829.2" y="782.0">j..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="826.2" y="755.0" width="26.7" height="15" fill="#66d4d4" rx="2" ry="2"/>
+<text x="829.2" y="766.0">b..</text>
+</g>
+<g>
+<title>[rabbitmq-consumer-17 tid=18425] (4 samples, 3.01%)</title><rect x="852.9" y="963.0" width="35.4" height="15" fill="#fc7e7e" rx="2" ry="2"/>
+<text x="855.9" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="852.9" y="947.0" width="35.4" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="855.9" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="852.9" y="931.0" width="35.4" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="855.9" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="852.9" y="915.0" width="35.4" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="855.9" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="852.9" y="899.0" width="35.4" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="855.9" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (3 samples, 2.26%)</title><rect x="852.9" y="883.0" width="26.6" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="855.9" y="894.0">c..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (3 samples, 2.26%)</title><rect x="852.9" y="867.0" width="26.6" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="855.9" y="878.0">p..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (3 samples, 2.26%)</title><rect x="852.9" y="851.0" width="26.6" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="855.9" y="862.0">p..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (3 samples, 2.26%)</title><rect x="852.9" y="835.0" width="26.6" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="855.9" y="846.0">i..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (3 samples, 2.26%)</title><rect x="852.9" y="819.0" width="26.6" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="855.9" y="830.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (3 samples, 2.26%)</title><rect x="852.9" y="803.0" width="26.6" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="855.9" y="814.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (3 samples, 2.26%)</title><rect x="852.9" y="787.0" width="26.6" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="855.9" y="798.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (3 samples, 2.26%)</title><rect x="852.9" y="771.0" width="26.6" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="855.9" y="782.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (3 samples, 2.26%)</title><rect x="852.9" y="755.0" width="26.6" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="855.9" y="766.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (3 samples, 2.26%)</title><rect x="852.9" y="739.0" width="26.6" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="855.9" y="750.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (3 samples, 2.26%)</title><rect x="852.9" y="723.0" width="26.6" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="855.9" y="734.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="852.9" y="707.0" width="26.6" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="855.9" y="718.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="852.9" y="691.0" width="26.6" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="855.9" y="702.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="852.9" y="675.0" width="26.6" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="855.9" y="686.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (3 samples, 2.26%)</title><rect x="852.9" y="659.0" width="26.6" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="855.9" y="670.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (3 samples, 2.26%)</title><rect x="852.9" y="643.0" width="26.6" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="855.9" y="654.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (3 samples, 2.26%)</title><rect x="852.9" y="627.0" width="26.6" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="855.9" y="638.0">i..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="852.9" y="611.0" width="26.6" height="15" fill="#59c7c7" rx="2" ry="2"/>
+<text x="855.9" y="622.0">b..</text>
+</g>
+<g>
+<title>java.util.ArrayList (1 samples, 0.75%)</title><rect x="879.5" y="883.0" width="8.8" height="15" fill="#62d0d0" rx="2" ry="2"/>
+<text x="882.5" y="894.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-2 tid=18410] (4 samples, 3.01%)</title><rect x="888.3" y="963.0" width="35.5" height="15" fill="#e45f5f" rx="2" ry="2"/>
+<text x="891.3" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="888.3" y="947.0" width="35.5" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="891.3" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="888.3" y="931.0" width="35.5" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="891.3" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="888.3" y="915.0" width="35.5" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="891.3" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="888.3" y="899.0" width="35.5" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="891.3" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="888.3" y="883.0" width="35.5" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="891.3" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="888.3" y="867.0" width="35.5" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="891.3" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="888.3" y="851.0" width="35.5" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="891.3" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="888.3" y="835.0" width="8.9" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="891.3" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="888.3" y="819.0" width="8.9" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="891.3" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="888.3" y="803.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="891.3" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.safeDuplicate (1 samples, 0.75%)</title><rect x="888.3" y="787.0" width="8.9" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="891.3" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="888.3" y="771.0" width="8.9" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="891.3" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="888.3" y="755.0" width="8.9" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="891.3" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/WebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="888.3" y="739.0" width="8.9" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="891.3" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/DefaultByteBufHolder.retainedDuplicate (1 samples, 0.75%)</title><rect x="888.3" y="723.0" width="8.9" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="891.3" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.replace (1 samples, 0.75%)</title><rect x="888.3" y="707.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="891.3" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.replace (1 samples, 0.75%)</title><rect x="888.3" y="691.0" width="8.9" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="891.3" y="702.0"></text>
+</g>
+<g>
+<title>io.netty.handler.codec.http.websocketx.TextWebSocketFrame (1 samples, 0.75%)</title><rect x="888.3" y="675.0" width="8.9" height="15" fill="#56c4c4" rx="2" ry="2"/>
+<text x="891.3" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (2 samples, 1.50%)</title><rect x="897.2" y="835.0" width="17.8" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="900.2" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (2 samples, 1.50%)</title><rect x="897.2" y="819.0" width="17.8" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="900.2" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (2 samples, 1.50%)</title><rect x="897.2" y="803.0" width="17.8" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="900.2" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (2 samples, 1.50%)</title><rect x="897.2" y="787.0" width="17.8" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="900.2" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (2 samples, 1.50%)</title><rect x="897.2" y="771.0" width="17.8" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="900.2" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (2 samples, 1.50%)</title><rect x="897.2" y="755.0" width="17.8" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="900.2" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (2 samples, 1.50%)</title><rect x="897.2" y="739.0" width="17.8" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="900.2" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (2 samples, 1.50%)</title><rect x="897.2" y="723.0" width="17.8" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="900.2" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="897.2" y="707.0" width="17.8" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="900.2" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="897.2" y="691.0" width="17.8" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="900.2" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="897.2" y="675.0" width="17.8" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="900.2" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (2 samples, 1.50%)</title><rect x="897.2" y="659.0" width="17.8" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="900.2" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (2 samples, 1.50%)</title><rect x="897.2" y="643.0" width="17.8" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="900.2" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (2 samples, 1.50%)</title><rect x="897.2" y="627.0" width="17.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="900.2" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (2 samples, 1.50%)</title><rect x="897.2" y="611.0" width="17.8" height="15" fill="#51bfbf" rx="2" ry="2"/>
+<text x="900.2" y="622.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="915.0" y="835.0" width="8.8" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="918.0" y="846.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="915.0" y="819.0" width="8.8" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="918.0" y="830.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (1 samples, 0.75%)</title><rect x="915.0" y="803.0" width="8.8" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="918.0" y="814.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (1 samples, 0.75%)</title><rect x="915.0" y="787.0" width="8.8" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="918.0" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (1 samples, 0.75%)</title><rect x="915.0" y="771.0" width="8.8" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="918.0" y="782.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="915.0" y="755.0" width="8.8" height="15" fill="#5bc9c9" rx="2" ry="2"/>
+<text x="918.0" y="766.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-3 tid=18411] (4 samples, 3.01%)</title><rect x="923.8" y="963.0" width="35.5" height="15" fill="#f27171" rx="2" ry="2"/>
+<text x="926.8" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="923.8" y="947.0" width="35.5" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="926.8" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="923.8" y="931.0" width="35.5" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="926.8" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="923.8" y="915.0" width="35.5" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="926.8" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="923.8" y="899.0" width="35.5" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="926.8" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="923.8" y="883.0" width="35.5" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="926.8" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="923.8" y="867.0" width="35.5" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="926.8" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="923.8" y="851.0" width="35.5" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="926.8" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="923.8" y="835.0" width="8.9" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="926.8" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="923.8" y="819.0" width="8.9" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="926.8" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="923.8" y="803.0" width="8.9" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="926.8" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannel.write (1 samples, 0.75%)</title><rect x="923.8" y="787.0" width="8.9" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="926.8" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/channel/DefaultChannelPipeline.write (1 samples, 0.75%)</title><rect x="923.8" y="771.0" width="8.9" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="926.8" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.write (1 samples, 0.75%)</title><rect x="923.8" y="755.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="926.8" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.newPromise (1 samples, 0.75%)</title><rect x="923.8" y="739.0" width="8.9" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="926.8" y="750.0"></text>
+</g>
+<g>
+<title>io.netty.channel.DefaultChannelPromise (1 samples, 0.75%)</title><rect x="923.8" y="723.0" width="8.9" height="15" fill="#66d4d4" rx="2" ry="2"/>
+<text x="926.8" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (2 samples, 1.50%)</title><rect x="932.7" y="835.0" width="17.8" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="935.7" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (2 samples, 1.50%)</title><rect x="932.7" y="819.0" width="17.8" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="935.7" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (2 samples, 1.50%)</title><rect x="932.7" y="803.0" width="17.8" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="935.7" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (2 samples, 1.50%)</title><rect x="932.7" y="787.0" width="17.8" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="935.7" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (2 samples, 1.50%)</title><rect x="932.7" y="771.0" width="17.8" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="935.7" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (2 samples, 1.50%)</title><rect x="932.7" y="755.0" width="17.8" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="935.7" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (2 samples, 1.50%)</title><rect x="932.7" y="739.0" width="17.8" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="935.7" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (2 samples, 1.50%)</title><rect x="932.7" y="723.0" width="17.8" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="935.7" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="932.7" y="707.0" width="17.8" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="935.7" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="932.7" y="691.0" width="17.8" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="935.7" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="932.7" y="675.0" width="17.8" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="935.7" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (2 samples, 1.50%)</title><rect x="932.7" y="659.0" width="17.8" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="935.7" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (2 samples, 1.50%)</title><rect x="932.7" y="643.0" width="17.8" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="935.7" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (2 samples, 1.50%)</title><rect x="932.7" y="627.0" width="17.8" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="935.7" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (2 samples, 1.50%)</title><rect x="932.7" y="611.0" width="17.8" height="15" fill="#54c2c2" rx="2" ry="2"/>
+<text x="935.7" y="622.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="950.5" y="835.0" width="8.8" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="953.5" y="846.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="950.5" y="819.0" width="8.8" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="953.5" y="830.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (1 samples, 0.75%)</title><rect x="950.5" y="803.0" width="8.8" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="953.5" y="814.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (1 samples, 0.75%)</title><rect x="950.5" y="787.0" width="8.8" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="953.5" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (1 samples, 0.75%)</title><rect x="950.5" y="771.0" width="8.8" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="953.5" y="782.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="950.5" y="755.0" width="8.8" height="15" fill="#64d2d2" rx="2" ry="2"/>
+<text x="953.5" y="766.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-4 tid=18412] (5 samples, 3.76%)</title><rect x="959.3" y="963.0" width="44.4" height="15" fill="#ea6666" rx="2" ry="2"/>
+<text x="962.3" y="974.0">[rab..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (5 samples, 3.76%)</title><rect x="959.3" y="947.0" width="44.4" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="962.3" y="958.0">java..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (5 samples, 3.76%)</title><rect x="959.3" y="931.0" width="44.4" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="962.3" y="942.0">java..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (5 samples, 3.76%)</title><rect x="959.3" y="915.0" width="44.4" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="962.3" y="926.0">java..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (5 samples, 3.76%)</title><rect x="959.3" y="899.0" width="44.4" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="962.3" y="910.0">com/..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (5 samples, 3.76%)</title><rect x="959.3" y="883.0" width="44.4" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="962.3" y="894.0">com/..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (5 samples, 3.76%)</title><rect x="959.3" y="867.0" width="44.4" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="962.3" y="878.0">pbou..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (5 samples, 3.76%)</title><rect x="959.3" y="851.0" width="44.4" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="962.3" y="862.0">pbou..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="959.3" y="835.0" width="17.8" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="962.3" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="959.3" y="819.0" width="17.8" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="962.3" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="959.3" y="803.0" width="17.8" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="962.3" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.safeDuplicate (1 samples, 0.75%)</title><rect x="959.3" y="787.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="962.3" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="959.3" y="771.0" width="8.9" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="962.3" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="959.3" y="755.0" width="8.9" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="962.3" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/WebSocketFrame.retainedDuplicate (1 samples, 0.75%)</title><rect x="959.3" y="739.0" width="8.9" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="962.3" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/DefaultByteBufHolder.retainedDuplicate (1 samples, 0.75%)</title><rect x="959.3" y="723.0" width="8.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="962.3" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBuf.retainedDuplicate (1 samples, 0.75%)</title><rect x="959.3" y="707.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="962.3" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBuf.duplicate (1 samples, 0.75%)</title><rect x="959.3" y="691.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="962.3" y="702.0"></text>
+</g>
+<g>
+<title>io.netty.buffer.UnpooledDuplicatedByteBuf (1 samples, 0.75%)</title><rect x="959.3" y="675.0" width="8.9" height="15" fill="#6ad8d8" rx="2" ry="2"/>
+<text x="962.3" y="686.0"></text>
+</g>
+<g>
+<title>java/util/concurrent/ConcurrentHashMap$ValuesView.iterator (1 samples, 0.75%)</title><rect x="968.2" y="787.0" width="8.9" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="971.2" y="798.0"></text>
+</g>
+<g>
+<title>java.util.concurrent.ConcurrentHashMap$ValueIterator (1 samples, 0.75%)</title><rect x="968.2" y="771.0" width="8.9" height="15" fill="#64d2d2" rx="2" ry="2"/>
+<text x="971.2" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (1 samples, 0.75%)</title><rect x="977.1" y="835.0" width="8.8" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="980.1" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (1 samples, 0.75%)</title><rect x="977.1" y="819.0" width="8.8" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="980.1" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="977.1" y="803.0" width="8.8" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="980.1" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (1 samples, 0.75%)</title><rect x="977.1" y="787.0" width="8.8" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="980.1" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (1 samples, 0.75%)</title><rect x="977.1" y="771.0" width="8.8" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="980.1" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="977.1" y="755.0" width="8.8" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="980.1" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (1 samples, 0.75%)</title><rect x="977.1" y="739.0" width="8.8" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="980.1" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (1 samples, 0.75%)</title><rect x="977.1" y="723.0" width="8.8" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="980.1" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="977.1" y="707.0" width="8.8" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="980.1" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="977.1" y="691.0" width="8.8" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="980.1" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="977.1" y="675.0" width="8.8" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="980.1" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="977.1" y="659.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="980.1" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="977.1" y="643.0" width="8.8" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="980.1" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (1 samples, 0.75%)</title><rect x="977.1" y="627.0" width="8.8" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="980.1" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="977.1" y="611.0" width="8.8" height="15" fill="#5ac8c8" rx="2" ry="2"/>
+<text x="980.1" y="622.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (2 samples, 1.50%)</title><rect x="985.9" y="835.0" width="17.8" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="988.9" y="846.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (2 samples, 1.50%)</title><rect x="985.9" y="819.0" width="17.8" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="988.9" y="830.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (2 samples, 1.50%)</title><rect x="985.9" y="803.0" width="17.8" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="988.9" y="814.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (2 samples, 1.50%)</title><rect x="985.9" y="787.0" width="17.8" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="988.9" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (2 samples, 1.50%)</title><rect x="985.9" y="771.0" width="17.8" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="988.9" y="782.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="985.9" y="755.0" width="8.9" height="15" fill="#6ad8d8" rx="2" ry="2"/>
+<text x="988.9" y="766.0"></text>
+</g>
+<g>
+<title>java/util/Arrays.copyOf (1 samples, 0.75%)</title><rect x="994.8" y="755.0" width="8.9" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="997.8" y="766.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="994.8" y="739.0" width="8.9" height="15" fill="#53c1c1" rx="2" ry="2"/>
+<text x="997.8" y="750.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-5 tid=18413] (4 samples, 3.01%)</title><rect x="1003.7" y="963.0" width="35.5" height="15" fill="#f97a7a" rx="2" ry="2"/>
+<text x="1006.7" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="1003.7" y="947.0" width="35.5" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="1006.7" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="1003.7" y="931.0" width="35.5" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="1006.7" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="1003.7" y="915.0" width="35.5" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="1006.7" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="1003.7" y="899.0" width="35.5" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="1006.7" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="1003.7" y="883.0" width="35.5" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="1006.7" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="1003.7" y="867.0" width="35.5" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="1006.7" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="1003.7" y="851.0" width="35.5" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="1006.7" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="1003.7" y="835.0" width="17.7" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="1006.7" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="1003.7" y="819.0" width="17.7" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="1006.7" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (2 samples, 1.50%)</title><rect x="1003.7" y="803.0" width="17.7" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="1006.7" y="814.0"></text>
+</g>
+<g>
+<title>io.netty.channel.group.DefaultChannelGroupFuture (1 samples, 0.75%)</title><rect x="1003.7" y="787.0" width="8.9" height="15" fill="#64d2d2" rx="2" ry="2"/>
+<text x="1006.7" y="798.0"></text>
+</g>
+<g>
+<title>java.util.LinkedHashMap (1 samples, 0.75%)</title><rect x="1012.6" y="787.0" width="8.8" height="15" fill="#5dcbcb" rx="2" ry="2"/>
+<text x="1015.6" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (2 samples, 1.50%)</title><rect x="1021.4" y="835.0" width="17.8" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="1024.4" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (2 samples, 1.50%)</title><rect x="1021.4" y="819.0" width="17.8" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="1024.4" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (2 samples, 1.50%)</title><rect x="1021.4" y="803.0" width="17.8" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="1024.4" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (2 samples, 1.50%)</title><rect x="1021.4" y="787.0" width="17.8" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="1024.4" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (2 samples, 1.50%)</title><rect x="1021.4" y="771.0" width="17.8" height="15" fill="#61f261" rx="2" ry="2"/>
+<text x="1024.4" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (2 samples, 1.50%)</title><rect x="1021.4" y="755.0" width="17.8" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="1024.4" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (2 samples, 1.50%)</title><rect x="1021.4" y="739.0" width="17.8" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="1024.4" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (2 samples, 1.50%)</title><rect x="1021.4" y="723.0" width="17.8" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="1024.4" y="734.0"></text>
+</g>
+<g>
+<title>io.netty.buffer.UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf (1 samples, 0.75%)</title><rect x="1021.4" y="707.0" width="8.9" height="15" fill="#5ecccc" rx="2" ry="2"/>
+<text x="1024.4" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="1030.3" y="707.0" width="8.9" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="1033.3" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="1030.3" y="691.0" width="8.9" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="1033.3" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (1 samples, 0.75%)</title><rect x="1030.3" y="675.0" width="8.9" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="1033.3" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="1030.3" y="659.0" width="8.9" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="1033.3" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (1 samples, 0.75%)</title><rect x="1030.3" y="643.0" width="8.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="1033.3" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (1 samples, 0.75%)</title><rect x="1030.3" y="627.0" width="8.9" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="1033.3" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="1030.3" y="611.0" width="8.9" height="15" fill="#50bebe" rx="2" ry="2"/>
+<text x="1033.3" y="622.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-6 tid=18414] (4 samples, 3.01%)</title><rect x="1039.2" y="963.0" width="35.5" height="15" fill="#fc7e7e" rx="2" ry="2"/>
+<text x="1042.2" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="1039.2" y="947.0" width="35.5" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="1042.2" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="1039.2" y="931.0" width="35.5" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="1042.2" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="1039.2" y="915.0" width="35.5" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="1042.2" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (3 samples, 2.26%)</title><rect x="1039.2" y="899.0" width="26.6" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="1042.2" y="910.0">c..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (3 samples, 2.26%)</title><rect x="1039.2" y="883.0" width="26.6" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="1042.2" y="894.0">c..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (3 samples, 2.26%)</title><rect x="1039.2" y="867.0" width="26.6" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="1042.2" y="878.0">p..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (3 samples, 2.26%)</title><rect x="1039.2" y="851.0" width="26.6" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="1042.2" y="862.0">p..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (2 samples, 1.50%)</title><rect x="1039.2" y="835.0" width="17.7" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="1042.2" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (2 samples, 1.50%)</title><rect x="1039.2" y="819.0" width="17.7" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="1042.2" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (2 samples, 1.50%)</title><rect x="1039.2" y="803.0" width="17.7" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="1042.2" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (2 samples, 1.50%)</title><rect x="1039.2" y="787.0" width="17.7" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="1042.2" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (2 samples, 1.50%)</title><rect x="1039.2" y="771.0" width="17.7" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="1042.2" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (2 samples, 1.50%)</title><rect x="1039.2" y="755.0" width="17.7" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="1042.2" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (2 samples, 1.50%)</title><rect x="1039.2" y="739.0" width="17.7" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="1042.2" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (2 samples, 1.50%)</title><rect x="1039.2" y="723.0" width="17.7" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="1042.2" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="1039.2" y="707.0" width="17.7" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="1042.2" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="1039.2" y="691.0" width="17.7" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="1042.2" y="702.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (2 samples, 1.50%)</title><rect x="1039.2" y="675.0" width="17.7" height="15" fill="#65f665" rx="2" ry="2"/>
+<text x="1042.2" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (2 samples, 1.50%)</title><rect x="1039.2" y="659.0" width="17.7" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="1042.2" y="670.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (2 samples, 1.50%)</title><rect x="1039.2" y="643.0" width="17.7" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="1042.2" y="654.0"></text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (2 samples, 1.50%)</title><rect x="1039.2" y="627.0" width="17.7" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="1042.2" y="638.0"></text>
+</g>
+<g>
+<title>byte[] (2 samples, 1.50%)</title><rect x="1039.2" y="611.0" width="17.7" height="15" fill="#54c2c2" rx="2" ry="2"/>
+<text x="1042.2" y="622.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="1056.9" y="835.0" width="8.9" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="1059.9" y="846.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="1056.9" y="819.0" width="8.9" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="1059.9" y="830.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (1 samples, 0.75%)</title><rect x="1056.9" y="803.0" width="8.9" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="1059.9" y="814.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (1 samples, 0.75%)</title><rect x="1056.9" y="787.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="1059.9" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (1 samples, 0.75%)</title><rect x="1056.9" y="771.0" width="8.9" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="1059.9" y="782.0"></text>
+</g>
+<g>
+<title>java/util/Arrays.copyOf (1 samples, 0.75%)</title><rect x="1056.9" y="755.0" width="8.9" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="1059.9" y="766.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="1056.9" y="739.0" width="8.9" height="15" fill="#65d3d3" rx="2" ry="2"/>
+<text x="1059.9" y="750.0"></text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.getTask (1 samples, 0.75%)</title><rect x="1065.8" y="899.0" width="8.9" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="1068.8" y="910.0"></text>
+</g>
+<g>
+<title>java/util/concurrent/LinkedBlockingQueue.take (1 samples, 0.75%)</title><rect x="1065.8" y="883.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="1068.8" y="894.0"></text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.await (1 samples, 0.75%)</title><rect x="1065.8" y="867.0" width="8.9" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="1068.8" y="878.0"></text>
+</g>
+<g>
+<title>java/util/concurrent/locks/AbstractQueuedSynchronizer$ConditionObject.addConditionWaiter (1 samples, 0.75%)</title><rect x="1065.8" y="851.0" width="8.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="1068.8" y="862.0"></text>
+</g>
+<g>
+<title>java.util.concurrent.locks.AbstractQueuedSynchronizer$Node (1 samples, 0.75%)</title><rect x="1065.8" y="835.0" width="8.9" height="15" fill="#55c3c3" rx="2" ry="2"/>
+<text x="1068.8" y="846.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-7 tid=18415] (4 samples, 3.01%)</title><rect x="1074.7" y="963.0" width="35.5" height="15" fill="#f57575" rx="2" ry="2"/>
+<text x="1077.7" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="1074.7" y="947.0" width="35.5" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="1077.7" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="1074.7" y="931.0" width="35.5" height="15" fill="#57e857" rx="2" ry="2"/>
+<text x="1077.7" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="1074.7" y="915.0" width="35.5" height="15" fill="#63f463" rx="2" ry="2"/>
+<text x="1077.7" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="1074.7" y="899.0" width="35.5" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="1077.7" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="1074.7" y="883.0" width="35.5" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="1077.7" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="1074.7" y="867.0" width="35.5" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="1077.7" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="1074.7" y="851.0" width="35.5" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="1077.7" y="862.0">pbo..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (4 samples, 3.01%)</title><rect x="1074.7" y="835.0" width="35.5" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="1077.7" y="846.0">jav..</text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (4 samples, 3.01%)</title><rect x="1074.7" y="819.0" width="35.5" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="1077.7" y="830.0">jav..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (4 samples, 3.01%)</title><rect x="1074.7" y="803.0" width="35.5" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="1077.7" y="814.0">jav..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (4 samples, 3.01%)</title><rect x="1074.7" y="787.0" width="35.5" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="1077.7" y="798.0">jav..</text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (4 samples, 3.01%)</title><rect x="1074.7" y="771.0" width="35.5" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="1077.7" y="782.0">jav..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="1074.7" y="755.0" width="26.6" height="15" fill="#6ddbdb" rx="2" ry="2"/>
+<text x="1077.7" y="766.0">b..</text>
+</g>
+<g>
+<title>java/util/Arrays.copyOf (1 samples, 0.75%)</title><rect x="1101.3" y="755.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="1104.3" y="766.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="1101.3" y="739.0" width="8.9" height="15" fill="#58c6c6" rx="2" ry="2"/>
+<text x="1104.3" y="750.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-8 tid=18416] (4 samples, 3.01%)</title><rect x="1110.2" y="963.0" width="35.4" height="15" fill="#e66161" rx="2" ry="2"/>
+<text x="1113.2" y="974.0">[ra..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (4 samples, 3.01%)</title><rect x="1110.2" y="947.0" width="35.4" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="1113.2" y="958.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (4 samples, 3.01%)</title><rect x="1110.2" y="931.0" width="35.4" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="1113.2" y="942.0">jav..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (4 samples, 3.01%)</title><rect x="1110.2" y="915.0" width="35.4" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="1113.2" y="926.0">jav..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (4 samples, 3.01%)</title><rect x="1110.2" y="899.0" width="35.4" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="1113.2" y="910.0">com..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (4 samples, 3.01%)</title><rect x="1110.2" y="883.0" width="35.4" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="1113.2" y="894.0">com..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (4 samples, 3.01%)</title><rect x="1110.2" y="867.0" width="35.4" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="1113.2" y="878.0">pbo..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (4 samples, 3.01%)</title><rect x="1110.2" y="851.0" width="35.4" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="1113.2" y="862.0">pbo..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (3 samples, 2.26%)</title><rect x="1110.2" y="835.0" width="26.6" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="1113.2" y="846.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (3 samples, 2.26%)</title><rect x="1110.2" y="819.0" width="26.6" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="1113.2" y="830.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (3 samples, 2.26%)</title><rect x="1110.2" y="803.0" width="26.6" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="1113.2" y="814.0">i..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.safeDuplicate (2 samples, 1.50%)</title><rect x="1110.2" y="787.0" width="17.7" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="1113.2" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.retainedDuplicate (2 samples, 1.50%)</title><rect x="1110.2" y="771.0" width="17.7" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="1113.2" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.retainedDuplicate (2 samples, 1.50%)</title><rect x="1110.2" y="755.0" width="17.7" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="1113.2" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/WebSocketFrame.retainedDuplicate (2 samples, 1.50%)</title><rect x="1110.2" y="739.0" width="17.7" height="15" fill="#54e554" rx="2" ry="2"/>
+<text x="1113.2" y="750.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/DefaultByteBufHolder.retainedDuplicate (2 samples, 1.50%)</title><rect x="1110.2" y="723.0" width="17.7" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="1113.2" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.replace (2 samples, 1.50%)</title><rect x="1110.2" y="707.0" width="17.7" height="15" fill="#59ea59" rx="2" ry="2"/>
+<text x="1113.2" y="718.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.replace (2 samples, 1.50%)</title><rect x="1110.2" y="691.0" width="17.7" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="1113.2" y="702.0"></text>
+</g>
+<g>
+<title>io.netty.handler.codec.http.websocketx.TextWebSocketFrame (2 samples, 1.50%)</title><rect x="1110.2" y="675.0" width="17.7" height="15" fill="#5dcbcb" rx="2" ry="2"/>
+<text x="1113.2" y="686.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroupFuture.&lt;init&gt; (1 samples, 0.75%)</title><rect x="1127.9" y="787.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="1130.9" y="798.0"></text>
+</g>
+<g>
+<title>java/util/Collections$UnmodifiableMap.values (1 samples, 0.75%)</title><rect x="1127.9" y="771.0" width="8.9" height="15" fill="#66f766" rx="2" ry="2"/>
+<text x="1130.9" y="782.0"></text>
+</g>
+<g>
+<title>java/util/LinkedHashMap.values (1 samples, 0.75%)</title><rect x="1127.9" y="755.0" width="8.9" height="15" fill="#6dfe6d" rx="2" ry="2"/>
+<text x="1130.9" y="766.0"></text>
+</g>
+<g>
+<title>java.util.LinkedHashMap$LinkedValues (1 samples, 0.75%)</title><rect x="1127.9" y="739.0" width="8.9" height="15" fill="#6cdada" rx="2" ry="2"/>
+<text x="1130.9" y="750.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="1136.8" y="835.0" width="8.8" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="1139.8" y="846.0"></text>
+</g>
+<g>
+<title>java/lang/String.&lt;init&gt; (1 samples, 0.75%)</title><rect x="1136.8" y="819.0" width="8.8" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="1139.8" y="830.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decode (1 samples, 0.75%)</title><rect x="1136.8" y="803.0" width="8.8" height="15" fill="#51e251" rx="2" ry="2"/>
+<text x="1139.8" y="814.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8 (1 samples, 0.75%)</title><rect x="1136.8" y="787.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="1139.8" y="798.0"></text>
+</g>
+<g>
+<title>java/lang/StringCoding.decodeUTF8_0 (1 samples, 0.75%)</title><rect x="1136.8" y="771.0" width="8.8" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="1139.8" y="782.0"></text>
+</g>
+<g>
+<title>byte[] (1 samples, 0.75%)</title><rect x="1136.8" y="755.0" width="8.8" height="15" fill="#51bfbf" rx="2" ry="2"/>
+<text x="1139.8" y="766.0"></text>
+</g>
+<g>
+<title>[rabbitmq-consumer-9 tid=18417] (5 samples, 3.76%)</title><rect x="1145.6" y="963.0" width="44.4" height="15" fill="#ed6a6a" rx="2" ry="2"/>
+<text x="1148.6" y="974.0">[rab..</text>
+</g>
+<g>
+<title>java/lang/Thread.run (5 samples, 3.76%)</title><rect x="1145.6" y="947.0" width="44.4" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="1148.6" y="958.0">java..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor$Worker.run (5 samples, 3.76%)</title><rect x="1145.6" y="931.0" width="44.4" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="1148.6" y="942.0">java..</text>
+</g>
+<g>
+<title>java/util/concurrent/ThreadPoolExecutor.runWorker (5 samples, 3.76%)</title><rect x="1145.6" y="915.0" width="44.4" height="15" fill="#67f867" rx="2" ry="2"/>
+<text x="1148.6" y="926.0">java..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerWorkService$WorkPoolRunnable.run (5 samples, 3.76%)</title><rect x="1145.6" y="899.0" width="44.4" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="1148.6" y="910.0">com/..</text>
+</g>
+<g>
+<title>com/rabbitmq/client/impl/ConsumerDispatcher$5.run (5 samples, 3.76%)</title><rect x="1145.6" y="883.0" width="44.4" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="1148.6" y="894.0">com/..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDelivery (5 samples, 3.76%)</title><rect x="1145.6" y="867.0" width="44.4" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="1148.6" y="878.0">pbou..</text>
+</g>
+<g>
+<title>pbouda/broadcaster/server/rabbit/EventConsumer.handleDeliveryInternal (5 samples, 3.76%)</title><rect x="1145.6" y="851.0" width="44.4" height="15" fill="#5ced5c" rx="2" ry="2"/>
+<text x="1148.6" y="862.0">pbou..</text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="1145.6" y="835.0" width="8.9" height="15" fill="#5dee5d" rx="2" ry="2"/>
+<text x="1148.6" y="846.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="1145.6" y="819.0" width="8.9" height="15" fill="#62f362" rx="2" ry="2"/>
+<text x="1148.6" y="830.0"></text>
+</g>
+<g>
+<title>io/netty/channel/group/DefaultChannelGroup.write (1 samples, 0.75%)</title><rect x="1145.6" y="803.0" width="8.9" height="15" fill="#69fa69" rx="2" ry="2"/>
+<text x="1148.6" y="814.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannel.write (1 samples, 0.75%)</title><rect x="1145.6" y="787.0" width="8.9" height="15" fill="#60f160" rx="2" ry="2"/>
+<text x="1148.6" y="798.0"></text>
+</g>
+<g>
+<title>io/netty/channel/DefaultChannelPipeline.write (1 samples, 0.75%)</title><rect x="1145.6" y="771.0" width="8.9" height="15" fill="#56e756" rx="2" ry="2"/>
+<text x="1148.6" y="782.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.write (1 samples, 0.75%)</title><rect x="1145.6" y="755.0" width="8.9" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="1148.6" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/channel/AbstractChannelHandlerContext.newPromise (1 samples, 0.75%)</title><rect x="1145.6" y="739.0" width="8.9" height="15" fill="#64f564" rx="2" ry="2"/>
+<text x="1148.6" y="750.0"></text>
+</g>
+<g>
+<title>io.netty.channel.DefaultChannelPromise (1 samples, 0.75%)</title><rect x="1145.6" y="723.0" width="8.9" height="15" fill="#52c0c0" rx="2" ry="2"/>
+<text x="1148.6" y="734.0"></text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.&lt;init&gt; (4 samples, 3.01%)</title><rect x="1154.5" y="835.0" width="35.5" height="15" fill="#6cfd6c" rx="2" ry="2"/>
+<text x="1157.5" y="846.0">io/..</text>
+</g>
+<g>
+<title>io/netty/handler/codec/http/websocketx/TextWebSocketFrame.fromText (4 samples, 3.01%)</title><rect x="1154.5" y="819.0" width="35.5" height="15" fill="#5eef5e" rx="2" ry="2"/>
+<text x="1157.5" y="830.0">io/..</text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (4 samples, 3.01%)</title><rect x="1154.5" y="803.0" width="35.5" height="15" fill="#5bec5b" rx="2" ry="2"/>
+<text x="1157.5" y="814.0">io/..</text>
+</g>
+<g>
+<title>io/netty/buffer/Unpooled.copiedBuffer (4 samples, 3.01%)</title><rect x="1154.5" y="787.0" width="35.5" height="15" fill="#5aeb5a" rx="2" ry="2"/>
+<text x="1157.5" y="798.0">io/..</text>
+</g>
+<g>
+<title>io/netty/buffer/ByteBufUtil.encodeString0 (4 samples, 3.01%)</title><rect x="1154.5" y="771.0" width="35.5" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="1157.5" y="782.0">io/..</text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (3 samples, 2.26%)</title><rect x="1154.5" y="755.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="1157.5" y="766.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/AbstractByteBufAllocator.heapBuffer (3 samples, 2.26%)</title><rect x="1154.5" y="739.0" width="26.6" height="15" fill="#53e453" rx="2" ry="2"/>
+<text x="1157.5" y="750.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator.newHeapBuffer (3 samples, 2.26%)</title><rect x="1154.5" y="723.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="1157.5" y="734.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="1154.5" y="707.0" width="26.6" height="15" fill="#6afb6a" rx="2" ry="2"/>
+<text x="1157.5" y="718.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="1154.5" y="691.0" width="26.6" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="1157.5" y="702.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.&lt;init&gt; (3 samples, 2.26%)</title><rect x="1154.5" y="675.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="1157.5" y="686.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledByteBufAllocator$InstrumentedUnpooledUnsafeHeapByteBuf.allocateArray (3 samples, 2.26%)</title><rect x="1154.5" y="659.0" width="26.6" height="15" fill="#6bfc6b" rx="2" ry="2"/>
+<text x="1157.5" y="670.0">i..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledUnsafeHeapByteBuf.allocateArray (3 samples, 2.26%)</title><rect x="1154.5" y="643.0" width="26.6" height="15" fill="#52e352" rx="2" ry="2"/>
+<text x="1157.5" y="654.0">i..</text>
+</g>
+<g>
+<title>io/netty/util/internal/PlatformDependent.allocateUninitializedArray (3 samples, 2.26%)</title><rect x="1154.5" y="627.0" width="26.6" height="15" fill="#68f968" rx="2" ry="2"/>
+<text x="1157.5" y="638.0">i..</text>
+</g>
+<g>
+<title>byte[] (3 samples, 2.26%)</title><rect x="1154.5" y="611.0" width="26.6" height="15" fill="#6ddbdb" rx="2" ry="2"/>
+<text x="1157.5" y="622.0">b..</text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.internalNioBuffer (1 samples, 0.75%)</title><rect x="1181.1" y="755.0" width="8.9" height="15" fill="#5ff05f" rx="2" ry="2"/>
+<text x="1184.1" y="766.0"></text>
+</g>
+<g>
+<title>io/netty/buffer/UnpooledHeapByteBuf.internalNioBuffer (1 samples, 0.75%)</title><rect x="1181.1" y="739.0" width="8.9" height="15" fill="#50e150" rx="2" ry="2"/>
+<text x="1184.1" y="750.0"></text>
+</g>
+<g>
+<title>java/nio/ByteBuffer.wrap (1 samples, 0.75%)</title><rect x="1181.1" y="723.0" width="8.9" height="15" fill="#55e655" rx="2" ry="2"/>
+<text x="1184.1" y="734.0"></text>
+</g>
+<g>
+<title>java/nio/ByteBuffer.wrap (1 samples, 0.75%)</title><rect x="1181.1" y="707.0" width="8.9" height="15" fill="#58e958" rx="2" ry="2"/>
+<text x="1184.1" y="718.0"></text>
+</g>
+<g>
+<title>java.nio.HeapByteBuffer (1 samples, 0.75%)</title><rect x="1181.1" y="691.0" width="8.9" height="15" fill="#62d0d0" rx="2" ry="2"/>
+<text x="1184.1" y="702.0"></text>
+</g>
+</g>
+</svg>

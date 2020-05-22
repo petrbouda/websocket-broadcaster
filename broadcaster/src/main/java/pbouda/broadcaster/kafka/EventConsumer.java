@@ -31,8 +31,8 @@ public class EventConsumer implements ForeachAction<Object, Object> {
     public void apply(Object key, Object value) {
         // It's pointless to use direct buffers POOLED because the byte array has been already created and just need to
         // wrap it around String. Netty internally wraps byte array and does not create a new one.
-//         ByteBuf buffer = PooledByteBufAllocator.DEFAULT.buffer();
-//         buffer.writeCharSequence((String) value, CharsetUtil.UTF_8);
+         ByteBuf buffer = PooledByteBufAllocator.DEFAULT.buffer();
+         buffer.writeCharSequence((String) value, CharsetUtil.UTF_8);
 
         channelGroup.write(new TextWebSocketFrame((String) value))
                 .addListener(future -> {
